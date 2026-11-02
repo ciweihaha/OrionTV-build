@@ -2,6 +2,10 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/build-apk.yml'
 
 # 最小权限说明：contents:write 仅用于末尾 Create Release 步骤创建 Release；其余步骤只读。
 permissions:
