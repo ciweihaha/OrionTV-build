@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useTVEventHandler, HWEvent } from "react-native";
+import { useTVEventHandler } from "react-native";
+import type { TVRemoteEvent } from "react-native";
 import usePlayerStore from "@/stores/playerStore";
 
 const SEEK_STEP = 20 * 1000; // 快进/快退的时间步长（毫秒）
@@ -59,13 +60,13 @@ export const useTVRemoteHandler = () => {
 
   // 处理遥控器事件
   const handleTVEvent = useCallback(
-    (event: HWEvent) => {
+    (event: TVRemoteEvent) => {
       if (showEpisodeModal) {
         return;
       }
 
       if (event.eventType === "longRight" || event.eventType === "longLeft") {
-        if (event.eventKeyAction === 1) {
+        if (Number(event.eventKeyAction) === 1) {
           if (fastForwardIntervalRef.current) {
             clearInterval(fastForwardIntervalRef.current);
             fastForwardIntervalRef.current = null;

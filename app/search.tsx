@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { View, TextInput, StyleSheet, Alert, Keyboard, TouchableOpacity } from "react-native";
+import type { TextInputInstance } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import VideoCard from "@/components/VideoCard";
@@ -29,7 +30,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
-  const textInputRef = useRef<TextInput>(null);
+  const textInputRef = useRef<TextInputInstance>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();

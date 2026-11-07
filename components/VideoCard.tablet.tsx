@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from "react-native";
+import type { ViewInstance } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
@@ -30,7 +31,7 @@ interface VideoCardTabletProps extends React.ComponentProps<typeof TouchableOpac
   api: API;
 }
 
-const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
+const VideoCardTablet = forwardRef<ViewInstance, VideoCardTabletProps>(
   (
     {
       id,
@@ -248,7 +249,7 @@ const createTabletStyles = (cardWidth: number, cardHeight: number, spacing: numb
       resizeMode: 'cover',
     },
     pressOverlay: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0,0,0,0.4)",
       justifyContent: "center",
       alignItems: "center",

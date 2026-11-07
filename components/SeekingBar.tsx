@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
   seekingBarBackground: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(255, 255, 255, 0.3)",
     borderRadius: 2.5,
   },

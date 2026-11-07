@@ -41,7 +41,7 @@ const ResponsiveHeader: React.FC<ResponsiveHeaderProps> = ({
 
   return (
     <>
-      {Platform.OS === 'android' && <StatusBar backgroundColor="#1c1c1e" barStyle="light-content" />}
+      {Platform.OS === 'android' && <StatusBar barStyle="light-content" />}
       <View style={dynamicStyles.container}>
         <View style={dynamicStyles.content}>
           {/* 左侧区域 */}

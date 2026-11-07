@@ -52,15 +52,15 @@ const createResponsiveStyles = (deviceType: string) => {
       ...(isMobile || isTablet ? { paddingTop: 0 } : {}),
     },
     videoContainer: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       // 为触摸设备添加更多的交互区域
       ...(isMobile || isTablet ? { zIndex: 1 } : {}),
     },
     videoPlayer: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
     },
     loadingContainer: {
-      ...StyleSheet.absoluteFillObject,
+      ...StyleSheet.absoluteFill,
       backgroundColor: "rgba(0, 0, 0, 0.8)",
       justifyContent: "center",
       alignItems: "center",

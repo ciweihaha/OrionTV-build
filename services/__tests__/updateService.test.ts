@@ -9,24 +9,79 @@ import updateService from "../updateService";
 
 const mockFiles = new Map<string, Uint8Array>();
 
+/**
+ * expo-file-system 58 新 API 的最小 mock：File/Directory/Paths 类，
+ * 由 mockFiles 驱动（与旧版 mock 同一份内存文件表）。
+ */
+class mockFile {
+  static downloadFileAsync = jest.fn();
+  static createDownloadTask = jest.fn();
+  uri: string;
+  constructor(...uris: any[]) {
+    this.uri = uris
+      .map((u: any) => (typeof u === "string" ? u : u.uri))
+      .join("");
+  }
+  get exists(): boolean {
+    return mockFiles.has(this.uri);
+  }
+  info() {
+    const data = mockFiles.get(this.uri);
+    return data
+      ? { exists: true, size: data.length, uri: this.uri }
+      : { exists: false };
+  }
+  delete() {
+    mockFiles.delete(this.uri);
+  }
+  // 模拟真实 readableStream 的 1KB 分块读取
+  readableStream() {
+    const data = mockFiles.get(this.uri) ?? new Uint8Array(0);
+    let offset = 0;
+    return {
+      getReader: () => ({
+        read: async () => {
+          if (offset >= data.length) return { done: true, value: undefined };
+          const chunk = data.subarray(offset, Math.min(offset + 1024, data.length));
+          offset += chunk.length;
+          return { done: false, value: chunk };
+        },
+        releaseLock: () => {},
+      }),
+    };
+  }
+  async text() {
+    return new TextDecoder().decode(mockFiles.get(this.uri) ?? new Uint8Array(0));
+  }
+  async base64() {
+    return Buffer.from(mockFiles.get(this.uri) ?? new Uint8Array(0)).toString("base64");
+  }
+  async bytes() {
+    return mockFiles.get(this.uri) ?? new Uint8Array(0);
+  }
+}
+
+class mockDirectory {
+  uri: string;
+  constructor(...uris: any[]) {
+    this.uri = uris
+      .map((u: any) => (typeof u === "string" ? u : u.uri))
+      .join("");
+  }
+  list() {
+    return [];
+  }
+}
+
 jest.mock("expo-file-system", () => ({
-  documentDirectory: "file:///docs/",
-  EncodingType: { Base64: "base64", UTF8: "utf8" },
-  getInfoAsync: jest.fn(async (uri: string) => {
-    const data = mockFiles.get(uri);
-    return data ? { exists: true, size: data.length } : { exists: false };
-  }),
-  readAsStringAsync: jest.fn(async (uri: string, opts: any) => {
-    const data = mockFiles.get(uri);
-    if (!data) throw new Error(`mock file not found: ${uri}`);
-    const start = opts?.position ?? 0;
-    const len = opts?.length ?? data.length - start;
-    return Buffer.from(data.subarray(start, start + len)).toString("base64");
-  }),
-  readDirectoryAsync: jest.fn(async () => []),
-  deleteAsync: jest.fn(async () => undefined),
+  File: mockFile,
+  Directory: mockDirectory,
+  Paths: { document: new mockDirectory("file:///docs/") },
+}));
+
+// installApk 用的取 content:// URI 仍走 legacy 子包
+jest.mock("expo-file-system/legacy", () => ({
   getContentUriAsync: jest.fn(async (uri: string) => uri),
-  createDownloadResumable: jest.fn(),
 }));
 
 jest.mock("expo-intent-launcher", () => ({

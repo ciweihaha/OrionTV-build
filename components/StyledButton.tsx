@@ -1,5 +1,6 @@
 import React, { forwardRef } from "react";
 import { Animated, Pressable, StyleSheet, StyleProp, ViewStyle, PressableProps, TextStyle, View, Platform } from "react-native";
+import type { ViewInstance } from "react-native";
 import { ThemedText } from "./ThemedText";
 import { Colors } from "@/constants/Colors";
 import { useButtonAnimation } from "@/hooks/useAnimation";
@@ -14,7 +15,7 @@ interface StyledButtonProps extends PressableProps {
   textStyle?: StyleProp<TextStyle>;
 }
 
-export const StyledButton = forwardRef<View, StyledButtonProps>(
+export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
   ({ children, text, variant = "default", isSelected = false, style, textStyle, ...rest }, ref) => {
     const colorScheme = "dark";
     const colors = Colors[colorScheme];

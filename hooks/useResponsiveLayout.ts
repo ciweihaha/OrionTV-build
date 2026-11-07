@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dimensions, Platform } from "react-native";
+import type { ScaledSize } from "react-native";
 
 export type DeviceType = "mobile" | "tablet" | "tv";
 
@@ -81,7 +82,7 @@ export const useResponsiveLayout = (): ResponsiveConfig => {
   });
 
   useEffect(() => {
-    const subscription = Dimensions.addEventListener("change", ({ window }) => {
+    const subscription = Dimensions.addEventListener("change", ({ window }: { window: ScaledSize }) => {
       setDimensions({ width: window.width, height: window.height });
     });
 

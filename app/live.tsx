@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { View, FlatList, StyleSheet, ActivityIndicator, Modal, useTVEventHandler, HWEvent, Text, TextInput, TouchableOpacity } from "react-native";
+import { View, FlatList, StyleSheet, ActivityIndicator, Modal, useTVEventHandler, Text, TextInput, TouchableOpacity } from "react-native";
+import type { TVRemoteEvent } from "react-native";
 import LivePlayer from "@/components/LivePlayer";
 import { getPlayableUrl, getCachedM3u, refreshM3u, Channel } from "@/services/m3u";
 import { ThemedView } from "@/components/ThemedView";
@@ -262,7 +263,7 @@ export default function LiveScreen() {
   }, []);
 
   const handleTVEvent = useCallback(
-    (event: HWEvent) => {
+    (event: TVRemoteEvent) => {
       if (deviceType !== 'tv') return;
       if (isChannelListVisible) return;
       const t = event.eventType ?? "";

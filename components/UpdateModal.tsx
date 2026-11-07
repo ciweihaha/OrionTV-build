@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, View, StyleSheet, ActivityIndicator, Platform } from "react-native";
+import type { ViewInstance } from "react-native";
 import { useUpdateStore } from "../stores/updateStore";
 import { Colors } from "../constants/Colors";
 import { StyledButton } from "./StyledButton";
@@ -20,9 +21,9 @@ export function UpdateModal() {
     downloadedPath,
   } = useUpdateStore();
 
-  const updateButtonRef = React.useRef<View>(null);
-  const laterButtonRef = React.useRef<View>(null);
-  const skipButtonRef = React.useRef<View>(null);
+  const updateButtonRef = React.useRef<ViewInstance>(null);
+  const laterButtonRef = React.useRef<ViewInstance>(null);
+  const skipButtonRef = React.useRef<ViewInstance>(null);
 
   async function handleUpdate() {
     if (!downloading && !downloadedPath) {
