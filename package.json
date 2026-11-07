@@ -23,7 +23,7 @@
     "preset": "jest-expo"
   },
   "resolutions": {
-    "react-native": "npm:react-native-tvos@~0.74.2-0"
+    "react-native": "npm:react-native-tvos@~0.88.1-0"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
