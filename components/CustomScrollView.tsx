@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
+import type { ScrollViewInstance } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -29,7 +30,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   emptyMessage = "暂无内容",
   ListFooterComponent,
 }) => {
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
   const firstCardRef = useRef<any>(null); // <--- 新增
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const responsiveConfig = useResponsiveLayout();
@@ -188,12 +189,12 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
                     const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
 
                     const cardProps = {
-                      key: actualIndex,
                       style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
                     };
 
                     return (
-                      <View {...cardProps}>
+                      // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
+                      <View key={actualIndex} {...cardProps}>
                         {renderItem({ item, index: actualIndex })}
                       </View>
                     );

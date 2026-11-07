@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, forwardRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated } from "react-native";
+import type { ViewInstance } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
@@ -30,7 +31,7 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   api: API;
 }
 
-const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
+const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
   (
     {
       id,

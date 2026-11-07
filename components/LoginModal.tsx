@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Modal, View, TextInput, StyleSheet, ActivityIndicator, Alert, Keyboard, InteractionManager } from "react-native";
+import { Modal, View, TextInput, StyleSheet, ActivityIndicator, Alert, Keyboard } from "react-native";
+import type { TextInputInstance } from "react-native";
 import { usePathname } from "expo-router";
 import Toast from "react-native-toast-message";
 import useAuthStore from "@/stores/authStore";
@@ -18,8 +19,8 @@ const LoginModal = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const usernameInputRef = useRef<TextInput>(null);
-  const passwordInputRef = useRef<TextInput>(null);
+  const usernameInputRef = useRef<TextInputInstance>(null);
+  const passwordInputRef = useRef<TextInputInstance>(null);
   const pathname = usePathname();
   const isSettingsPage = pathname.includes("settings");
 
@@ -118,8 +119,8 @@ const LoginModal = () => {
         }, 100);
       };
 
-      // 使用 InteractionManager 确保 UI 稳定后再执行
-      InteractionManager.runAfterInteractions(hideAndAlert);
+      // RN 0.88 已移除 InteractionManager：下一帧再执行（hideAndAlert 内已有 100ms 延迟兜底）
+      requestAnimationFrame(hideAndAlert);
 
     } catch (error) {
       Toast.show({

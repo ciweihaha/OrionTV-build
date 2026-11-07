@@ -1,5 +1,7 @@
 // UpdateService.ts
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
+// 新 API 没有取 content:// URI 的方法，安装 APK 需要它，只能走 legacy 子包
+import { getContentUriAsync } from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import Toast from 'react-native-toast-message';
 import { version as currentVersion } from '../package.json';
@@ -92,12 +94,11 @@ class UpdateService {
    * --------------------------------------------------------------- */
   private async cleanOldApkFiles(): Promise<void> {
     try {
-      const dirUri = FileSystem.documentDirectory; // e.g. file:///data/user/0/.../files/
-      if (!dirUri) {
-        throw new Error('Document directory is not available');
-      }
-      const listing = await FileSystem.readDirectoryAsync(dirUri);
-      const apkFiles = listing.filter(name => name.startsWith('OrionTV_v') && name.endsWith('.apk'));
+      // expo-file-system 58 新 API：Paths.document 为 Directory，list() 同步返回条目
+      const listing = Paths.document.list();
+      const apkFiles = listing
+        .filter(entry => entry.name.startsWith('OrionTV_v') && entry.name.endsWith('.apk'))
+        .map(entry => entry.name);
 
       if (apkFiles.length <= 2) return;
 
@@ -109,9 +110,8 @@ class UpdateService {
 
       const stale = sorted.slice(2); // 保留最新的两个
       for (const file of stale) {
-        const path = `${dirUri}${file}`;
         try {
-          await FileSystem.deleteAsync(path, { idempotent: true });
+          new File(Paths.document, file).delete();
           logger.debug(`Deleted old APK: ${file}`);
         } catch (e) {
           logger.warn(`Failed to delete ${file}`, e);
@@ -155,61 +155,56 @@ class UpdateService {
     await this.cleanOldApkFiles();
 
     for (let attempt = 1; attempt <= UPDATE_MAX_RETRIES; attempt++) {
-      let fileUri: string | null = null;
+      let targetFile: File | null = null;
       try {
         const timestamp = Date.now();
         const fileName = `OrionTV_v${timestamp}.apk`;
-        fileUri = `${FileSystem.documentDirectory}${fileName}`;
+        targetFile = new File(Paths.document, fileName);
 
         // 下载前先 HEAD 预检体积：被劫持的 CDN 可能返回超大文件
         await this.assertApkSizeAcceptable(url);
 
-        // expo-file-system 把下载进度回调参数统一为 `{totalBytesWritten, totalBytesExpectedToWrite}`
-        const downloadResumable = FileSystem.createDownloadResumable(
-          url,
-          fileUri,
-          {
-            // Android 需要在 AndroidManifest 中声明 INTERNET、WRITE_EXTERNAL_STORAGE (API 33+ 使用 MANAGE_EXTERNAL_STORAGE)
-            // 这里不使用系统下载管理器，因为我们想自己控制进度回调。
-          },
-          async progress => {
-            if (progress.totalBytesWritten > MAX_APK_DOWNLOAD_BYTES) {
+        // expo-file-system 58：DownloadTask 进度回调为 `{bytesWritten, totalBytes}`
+        //（totalBytes 为 -1 表示服务端未提供 Content-Length）
+        const task = File.createDownloadTask(url, targetFile, {
+          onProgress: async progress => {
+            if (progress.bytesWritten > MAX_APK_DOWNLOAD_BYTES) {
               logger.warn(`APK download exceeded ${MAX_APK_DOWNLOAD_BYTES} bytes, aborting`);
-              await downloadResumable.pauseAsync();
+              await task.pauseAsync();
               throw new Error('APK_TOO_LARGE');
             }
-            if (onProgress && progress.totalBytesExpectedToWrite) {
+            if (onProgress && progress.totalBytes > 0) {
               const percent = Math.floor(
-                (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100,
+                (progress.bytesWritten / progress.totalBytes) * 100,
               );
               onProgress(percent);
             }
           },
-        );
+        });
 
-        const result = await downloadResumable.downloadAsync();
-        if (!result || !result.uri) {
+        const downloadedFile = await task.downloadAsync();
+        if (!downloadedFile) {
           throw new Error('Download failed: No URI available');
         }
 
         // 下载后硬校验实际体积：HEAD 预检可被绕过、进度回调也非必达，
         // 落盘大小超限一律删文件并中止（走 catch 的 APK_TOO_LARGE 不重试分支），
         // 不进入后续 SHA 校验与安装
-        const downloadedInfo = await FileSystem.getInfoAsync(result.uri);
-        if (downloadedInfo.exists && downloadedInfo.size !== undefined && downloadedInfo.size > MAX_APK_DOWNLOAD_BYTES) {
+        const downloadedInfo = downloadedFile.info();
+        if (downloadedInfo.size !== undefined && downloadedInfo.size > MAX_APK_DOWNLOAD_BYTES) {
           throw new Error(`APK_TOO_LARGE: downloaded ${downloadedInfo.size} bytes`);
         }
 
         // SHA256 完整性校验（P0-3：防 CDN 投毒）
-        await this.verifyApkSha256(result.uri, url);
+        await this.verifyApkSha256(downloadedFile.uri, url);
 
-        logger.debug(`APK downloaded and verified: ${result.uri}`);
-        return result.uri;
+        logger.debug(`APK downloaded and verified: ${downloadedFile.uri}`);
+        return downloadedFile.uri;
       } catch (e) {
         // 校验失败或下载失败时删除残留文件，避免安装被篡改的包
-        if (fileUri) {
+        if (targetFile) {
           try {
-            await FileSystem.deleteAsync(fileUri, { idempotent: true });
+            if (targetFile.exists) targetFile.delete();
           } catch { /* ignore */ }
         }
         logger.warn(`downloadApk attempt ${attempt}/${UPDATE_MAX_RETRIES}`, e);
@@ -302,9 +297,12 @@ class UpdateService {
    * 峰值内存与文件大小无关。
    */
   private async sha256OfFile(fileUri: string): Promise<string> {
-    const CHUNK_SIZE = 1024 * 1024; // 1MB per chunk
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists || fileInfo.size === undefined) {
+    const file = new File(fileUri);
+    if (!file.exists) {
+      throw new Error('Cannot get file info for SHA256');
+    }
+    const fileInfo = file.info();
+    if (fileInfo.size === undefined) {
       throw new Error('Cannot get file info for SHA256');
     }
     const fileSize = fileInfo.size;
@@ -350,33 +348,29 @@ class UpdateService {
       h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
     };
 
-    // 增量读取： leftover 保存不足 64 字节的尾部
+    // 增量读取：expo-file-system 58 用 readableStream 流式读（默认 1KB 一块），
+    // leftover 保存不足 64 字节的尾部
     let leftover = new Uint8Array(0);
     let processedBytes = 0;
-    for (let offset = 0; offset < fileSize; offset += CHUNK_SIZE) {
-      const len = Math.min(CHUNK_SIZE, fileSize - offset);
-      const base64 = await FileSystem.readAsStringAsync(fileUri, {
-        encoding: FileSystem.EncodingType.Base64,
-        position: offset,
-        length: len,
-      });
-      // 解码长度必须取 atob 的实际输出长度：按 base64.length*3/4 估算会把
-      // 填充（= / ==）也算进字节数，每块多喂至多 2 个零字节，哈希必然错误
-      const binStr = atob(base64);
-      const chunk = new Uint8Array(binStr.length);
-      for (let i = 0; i < binStr.length; i++) {
-        chunk[i] = binStr.charCodeAt(i);
+    const reader = file.readableStream().getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = value;
+        // 拼接 leftover + chunk，按 64 字节块处理
+        const combined = new Uint8Array(leftover.length + chunk.length);
+        combined.set(leftover);
+        combined.set(chunk, leftover.length);
+        const fullBlocks = Math.floor(combined.length / 64);
+        for (let b = 0; b < fullBlocks; b++) {
+          processBlock(combined.subarray(b * 64, b * 64 + 64));
+        }
+        leftover = combined.subarray(fullBlocks * 64);
+        processedBytes += chunk.length;
       }
-      // 拼接 leftover + chunk，按 64 字节块处理
-      const combined = new Uint8Array(leftover.length + chunk.length);
-      combined.set(leftover);
-      combined.set(chunk, leftover.length);
-      const fullBlocks = Math.floor(combined.length / 64);
-      for (let b = 0; b < fullBlocks; b++) {
-        processBlock(combined.subarray(b * 64, b * 64 + 64));
-      }
-      leftover = combined.subarray(fullBlocks * 64);
-      processedBytes += chunk.length;
+    } finally {
+      reader.releaseLock();
     }
 
     // 字节数完整性第二道闸：实际送入哈希的字节数必须与文件大小严格一致，
@@ -412,13 +406,13 @@ class UpdateService {
    * --------------------------------------------------------------- */
   async installApk(fileUri: string): Promise<void> {
     // ① 先确认文件存在
-    const exists = await FileSystem.getInfoAsync(fileUri);
-    if (!exists.exists) {
+    const file = new File(fileUri);
+    if (!file.exists) {
       throw new Error(`APK not found at ${fileUri}`);
     }
 
     // ② 把 file:// 转成 content://，Expo‑FileSystem 已经实现了 FileProvider
-    const contentUri = await FileSystem.getContentUriAsync(fileUri);
+    const contentUri = await getContentUriAsync(fileUri);
 
     // ③ 只在 Android 里执行
     if (Platform.OS === 'android') {

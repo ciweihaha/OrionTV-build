@@ -5,6 +5,13 @@ jest.mock("react-native", () => ({
   Dimensions: {
     get: jest.fn(),
   },
+  // jest-expo 58 的 setup 会加载 expo-modules-core Platform，它读
+  // react-native 的 Platform.select / Platform.OS；mock 必须带上
+  Platform: {
+    OS: "android",
+    select: (specifics: Record<string, unknown>) =>
+      specifics.android ?? specifics.native ?? specifics.default,
+  },
 }));
 
 const mockedDimensions = Dimensions as jest.Mocked<typeof Dimensions>;

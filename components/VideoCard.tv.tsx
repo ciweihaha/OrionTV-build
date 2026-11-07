@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
 import { View, Text, StyleSheet, Pressable, TouchableOpacity, Alert, Animated, Platform } from "react-native";
+import type { ViewInstance } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
@@ -29,7 +30,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   api: API;
 }
 
-const VideoCard = forwardRef<View, VideoCardProps>(
+const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
   (
     {
       id,
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.3)",
     borderColor: Colors.dark.primary,
     borderWidth: 2,
