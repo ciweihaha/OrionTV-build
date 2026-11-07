@@ -1,12 +1,13 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
-import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { useKeepAwake } from "expo-keep-awake";
+import type { PlaybackStatus } from "@/stores/playerStore";
 
 interface LivePlayerProps {
   streamUrl: string | null;
   channelTitle?: string | null;
-  onPlaybackStatusUpdate: (status: AVPlaybackStatus) => void;
+  onPlaybackStatusUpdate: (status: PlaybackStatus) => void;
   /** V1.5：流加载失败/超时回调（每个 streamUrl 最多触发一次），供上层自动跳台 */
   onPlaybackError?: () => void;
 }
@@ -14,13 +15,15 @@ interface LivePlayerProps {
 const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 
 export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onPlaybackError }: LivePlayerProps) {
-  const video = useRef<Video>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   // V1.5：每个 streamUrl 只上报一次错误，避免上层重复跳台
   const errorReportedForRef = useRef<string | null>(null);
   useKeepAwake();
+
+  // expo-video player: source changes auto-replace via replaceAsync.
+  const player = useVideoPlayer(streamUrl ? { uri: streamUrl } : null);
 
   const reportErrorOnce = (url: string | null) => {
     if (!url || errorReportedForRef.current === url) return;
@@ -55,29 +58,63 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamUrl]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      if (status.isPlaying) {
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
+  // Bridge expo-video player events to the PlaybackStatus shape the
+  // parent expects (same fields expo-av's AVPlaybackStatus carried).
+  useEffect(() => {
+    const emit = (patch: Partial<PlaybackStatus>) => {
+      onPlaybackStatusUpdate({
+        isLoaded: player.status === 'readyToPlay',
+        isPlaying: player.playing,
+        isBuffering: player.status === 'loading',
+        positionMillis: player.currentTime * 1000,
+        durationMillis: Number.isFinite(player.duration) ? player.duration * 1000 : null,
+        didJustFinish: false,
+        ...patch,
+      });
+    };
+
+    const subs = [
+      player.addListener('statusChange', ({ status, error }) => {
+        if (status === 'readyToPlay') {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          setIsLoading(false);
+          setIsTimeout(false);
+          // Autoplay live streams.
+          player.play();
+          emit({ isLoaded: true, isPlaying: player.playing, isBuffering: false, error: undefined });
+        } else if (status === 'loading') {
+          setIsLoading(true);
+          emit({ isLoaded: false, isBuffering: true });
+        } else if (status === 'error') {
+          setIsLoading(false);
+          setIsTimeout(true);
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          emit({ isLoaded: false, isPlaying: false, isBuffering: false, error: error?.message });
+          reportErrorOnce(streamUrl); // V1.5：播放错误交由上层跳台
         }
-        setIsLoading(false);
-        setIsTimeout(false);
-      } else if (status.isBuffering) {
-        setIsLoading(true);
-      }
-    } else {
-      if (status.error) {
-        setIsLoading(false);
-        setIsTimeout(true);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
+      }),
+      player.addListener('playingChange', ({ isPlaying }) => {
+        if (isPlaying) {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          setIsLoading(false);
+          setIsTimeout(false);
         }
-        reportErrorOnce(streamUrl); // V1.5：播放错误交由上层跳台
-      }
-    }
-    onPlaybackStatusUpdate(status);
-  };
+        emit({ isPlaying });
+      }),
+    ];
+
+    return () => {
+      subs.forEach((s) => s.remove());
+    };
+    // onPlaybackStatusUpdate is a stable parent callback; re-subscribe per player/stream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player, streamUrl]);
 
   if (!streamUrl) {
     return (
@@ -97,20 +134,11 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
 
   return (
     <View style={styles.container}>
-      <Video
-        ref={video}
+      <VideoView
+        player={player}
         style={styles.video}
-        source={{
-          uri: streamUrl,
-        }}
-        resizeMode={ResizeMode.CONTAIN}
-        shouldPlay
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-        onError={(e) => {
-          setIsTimeout(true);
-          setIsLoading(false);
-          reportErrorOnce(streamUrl); // V1.5：Video 组件级错误交由上层跳台
-        }}
+        contentFit="contain"
+        nativeControls={false}
       />
       {isLoading && (
         <View style={styles.loadingOverlay}>

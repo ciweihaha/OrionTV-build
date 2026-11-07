@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import Toast from "react-native-toast-message";
-import { AVPlaybackStatus, Video } from "expo-av";
-import { RefObject } from "react";
+import type { VideoPlayer } from "expo-video";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import Logger from '@/utils/Logger';
@@ -19,11 +18,27 @@ interface Episode {
   title: string;
 }
 
+/**
+ * expo-video adapter status — keeps the same fields the app used from
+ * expo-av's AVPlaybackStatus, so PlayerControls / SeekingBar /
+ * SourceSelectionModal / live.tsx need no changes. Synthesized from
+ * VideoPlayer events in useVideoHandlers (VOD) and LivePlayer (live).
+ */
+export interface PlaybackStatus {
+  isLoaded: boolean;
+  isPlaying: boolean;
+  isBuffering: boolean;
+  positionMillis: number;
+  durationMillis: number | null;
+  didJustFinish: boolean;
+  error?: string;
+}
+
 interface PlayerState {
-  videoRef: RefObject<Video> | null;
+  videoPlayer: VideoPlayer | null;
   currentEpisodeIndex: number;
   episodes: Episode[];
-  status: AVPlaybackStatus | null;
+  status: PlaybackStatus | null;
   isLoading: boolean;
   showControls: boolean;
   showEpisodeModal: boolean;
@@ -37,7 +52,7 @@ interface PlayerState {
   playbackRate: number;
   introEndTime?: number;
   outroStartTime?: number;
-  setVideoRef: (ref: RefObject<Video>) => void;
+  setVideoPlayer: (player: VideoPlayer | null) => void;
   loadVideo: (options: {
     source: string;
     id: string;
@@ -48,7 +63,7 @@ interface PlayerState {
   playEpisode: (index: number) => void;
   togglePlayPause: () => void;
   seek: (duration: number) => void;
-  handlePlaybackStatusUpdate: (newStatus: AVPlaybackStatus) => void;
+  handlePlaybackStatusUpdate: (newStatus: PlaybackStatus) => void;
   setLoading: (loading: boolean) => void;
   setShowControls: (show: boolean) => void;
   setShowEpisodeModal: (show: boolean) => void;
@@ -67,7 +82,7 @@ interface PlayerState {
 }
 
 const usePlayerStore = create<PlayerState>((set, get) => ({
-  videoRef: null,
+  videoPlayer: null,
   episodes: [],
   currentEpisodeIndex: -1,
   status: null,
@@ -87,7 +102,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
 
-  setVideoRef: (ref) => set({ videoRef: ref }),
+  setVideoPlayer: (player) => set({ videoPlayer: player }),
 
   loadVideo: async ({ source, id, episodeIndex, position, title }) => {
     const perfStart = performance.now();
@@ -247,7 +262,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playEpisode: async (index) => {
-    const { episodes, videoRef } = get();
+    const { episodes, videoPlayer } = get();
     if (index >= 0 && index < episodes.length) {
       set({
         currentEpisodeIndex: index,
@@ -257,7 +272,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         seekPosition: 0,
       });
       try {
-        await videoRef?.current?.replayAsync();
+        videoPlayer?.replay();
       } catch (error) {
         logger.debug("Failed to replay video:", error);
         Toast.show({ type: "error", text1: "播放失败" });
@@ -266,13 +281,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   togglePlayPause: async () => {
-    const { status, videoRef } = get();
+    const { status, videoPlayer } = get();
     if (status?.isLoaded) {
       try {
         if (status.isPlaying) {
-          await videoRef?.current?.pauseAsync();
+          videoPlayer?.pause();
         } else {
-          await videoRef?.current?.playAsync();
+          videoPlayer?.play();
         }
       } catch (error) {
         logger.debug("Failed to toggle play/pause:", error);
@@ -282,12 +297,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   seek: async (duration) => {
-    const { status, videoRef } = get();
+    const { status, videoPlayer } = get();
     if (!status?.isLoaded || !status.durationMillis) return;
 
     const newPosition = Math.max(0, Math.min(status.positionMillis + duration, status.durationMillis));
     try {
-      await videoRef?.current?.setPositionAsync(newPosition);
+      // expo-video uses seconds
+      videoPlayer!.currentTime = newPosition / 1000;
     } catch (error) {
       logger.debug("Failed to seek video:", error);
       Toast.show({ type: "error", text1: "快进/快退失败" });
@@ -444,11 +460,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   setShowNextEpisodeOverlay: (show) => set({ showNextEpisodeOverlay: show }),
 
   setPlaybackRate: async (rate) => {
-    const { videoRef } = get();
+    const { videoPlayer } = get();
     const detail = useDetailStore.getState().detail;
-    
+
     try {
-      await videoRef?.current?.setRateAsync(rate, true);
+      // expo-video: playbackRate is a settable property (seconds-based player)
+      videoPlayer!.playbackRate = rate;
       set({ playbackRate: rate });
       
       // Save the playback rate preference
