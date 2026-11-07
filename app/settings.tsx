@@ -56,16 +56,6 @@ export default function SettingsScreen() {
     loadSettings();
   }, [loadSettings]);
 
-  useEffect(() => {
-    if (lastMessage && !targetPage) {
-      const realMessage = lastMessage.split("_")[0];
-      handleRemoteInput(realMessage);
-      clearMessage(); // Clear the message after processing
-      markAsChanged();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMessage, targetPage]);
-
   const handleRemoteInput = (message: string) => {
     // Handle remote input based on currently focused section
     if (currentSection === "api" && apiSectionRef.current) {
@@ -76,6 +66,20 @@ export default function SettingsScreen() {
       setM3uUrl(message);
     }
   };
+
+  const markAsChanged = () => {
+    setHasChanges(true);
+  };
+
+  useEffect(() => {
+    if (lastMessage && !targetPage) {
+      const realMessage = lastMessage.split("_")[0];
+      handleRemoteInput(realMessage);
+      clearMessage(); // Clear the message after processing
+      markAsChanged();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMessage, targetPage]);
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -91,10 +95,6 @@ export default function SettingsScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const markAsChanged = () => {
-    setHasChanges(true);
   };
 
   const rawSections = [

@@ -48,34 +48,6 @@ export default function SearchScreen() {
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
 
-  useEffect(() => {
-    if (lastMessage && targetPage === 'search') {
-      logger.debug("Received remote input:", lastMessage);
-      const realMessage = lastMessage.split("_")[0];
-      setKeyword(realMessage);
-      handleSearch(realMessage);
-      clearMessage(); // Clear the message after processing
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMessage, targetPage]);
-
-  // 组件卸载时清理防抖定时器
-  useEffect(() => {
-    return () => {
-      if (searchDebounceTimer.current) {
-        clearTimeout(searchDebounceTimer.current);
-      }
-    };
-  }, []);
-
-  // useEffect(() => {
-  //   // Focus the text input when the screen loads
-  //   const timer = setTimeout(() => {
-  //     textInputRef.current?.focus();
-  //   }, 200);
-  //   return () => clearTimeout(timer);
-  // }, []);
-
   // 搜索防抖：防止远程输入连续触发或用户快速重复点击产生大量请求
   const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSearchingRef = useRef(false);
@@ -122,6 +94,34 @@ export default function SearchScreen() {
       }, 300);
     });
   };
+
+  useEffect(() => {
+    if (lastMessage && targetPage === 'search') {
+      logger.debug("Received remote input:", lastMessage);
+      const realMessage = lastMessage.split("_")[0];
+      setKeyword(realMessage);
+      handleSearch(realMessage);
+      clearMessage(); // Clear the message after processing
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMessage, targetPage]);
+
+  // 组件卸载时清理防抖定时器
+  useEffect(() => {
+    return () => {
+      if (searchDebounceTimer.current) {
+        clearTimeout(searchDebounceTimer.current);
+      }
+    };
+  }, []);
+
+  // useEffect(() => {
+  //   // Focus the text input when the screen loads
+  //   const timer = setTimeout(() => {
+  //     textInputRef.current?.focus();
+  //   }, 200);
+  //   return () => clearTimeout(timer);
+  // }, []);
 
   const onSearchPress = () => handleSearch();
 

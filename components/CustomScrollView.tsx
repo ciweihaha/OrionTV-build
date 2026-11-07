@@ -189,12 +189,12 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
                     const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
 
                     const cardProps = {
-                      key: actualIndex,
                       style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
                     };
 
                     return (
-                      <View {...cardProps}>
+                      // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
+                      <View key={actualIndex} {...cardProps}>
                         {renderItem({ item, index: actualIndex })}
                       </View>
                     );
