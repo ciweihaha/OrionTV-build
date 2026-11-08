@@ -32,10 +32,20 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 }) => {
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const firstCardRef = useRef<any>(null); // <--- 新增
+  const scrollToTopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
+
+  // 组件卸载时清掉 scrollToTop 的延时，避免已卸载后还去 focus 第一个卡片
+  useEffect(() => {
+    return () => {
+      if (scrollToTopTimer.current) {
+        clearTimeout(scrollToTopTimer.current);
+      }
+    };
+  }, []);
 
   // 添加返回键处理逻辑
   useEffect(() => {
@@ -73,7 +83,10 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const scrollToTop = () => {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     // 滚动动画结束后聚焦第一个卡片
-    setTimeout(() => {
+    if (scrollToTopTimer.current) {
+      clearTimeout(scrollToTopTimer.current);
+    }
+    scrollToTopTimer.current = setTimeout(() => {
       firstCardRef.current?.focus();
     }, 500); // 500ms 适配大多数动画时长
   };
