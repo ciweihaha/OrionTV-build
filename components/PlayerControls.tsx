@@ -14,26 +14,26 @@ interface PlayerControlsProps {
 }
 
 export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls }) => {
-  const {
-    currentEpisodeIndex,
-    episodes,
-    status,
-    isSeeking,
-    seekPosition,
-    progressPosition,
-    playbackRate,
-    togglePlayPause,
-    playEpisode,
-    setShowEpisodeModal,
-    setShowSourceModal,
-    setShowSpeedModal,
-    setIntroEndTime,
-    setOutroStartTime,
-    introEndTime,
-    outroStartTime,
-  } = usePlayerStore();
+  // 按字段订阅：控制条显示时 timeUpdate 每 0.5s 写 status/progressPosition，
+  // 整库订阅会让它跟着无关字段变化重渲染
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const episodes = usePlayerStore((s) => s.episodes);
+  const status = usePlayerStore((s) => s.status);
+  const isSeeking = usePlayerStore((s) => s.isSeeking);
+  const seekPosition = usePlayerStore((s) => s.seekPosition);
+  const progressPosition = usePlayerStore((s) => s.progressPosition);
+  const playbackRate = usePlayerStore((s) => s.playbackRate);
+  const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
+  const playEpisode = usePlayerStore((s) => s.playEpisode);
+  const setShowEpisodeModal = usePlayerStore((s) => s.setShowEpisodeModal);
+  const setShowSourceModal = usePlayerStore((s) => s.setShowSourceModal);
+  const setShowSpeedModal = usePlayerStore((s) => s.setShowSpeedModal);
+  const setIntroEndTime = usePlayerStore((s) => s.setIntroEndTime);
+  const setOutroStartTime = usePlayerStore((s) => s.setOutroStartTime);
+  const introEndTime = usePlayerStore((s) => s.introEndTime);
+  const outroStartTime = usePlayerStore((s) => s.outroStartTime);
 
-  const { detail } = useDetailStore();
+  const detail = useDetailStore((s) => s.detail);
   const resources = useSources();
 
   const videoTitle = detail?.title || "";
