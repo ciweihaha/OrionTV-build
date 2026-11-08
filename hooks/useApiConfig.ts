@@ -52,6 +52,18 @@ export const useApiConfig = () => {
         });
       } catch (error) {
         if (cancelled) return;
+        // 直接校验与 store 的 fetchServerConfig 是两次并行请求：这次失败时
+        // store 那次可能已经成功（serverConfig 已有值），说明服务器可达，
+        // 只是本次请求瞬时失败——别把有效说成无效，等 effect 3 按
+        // serverConfig 纠正；store 也没拿到配置时才按本次的错误报
+        if (useSettingsStore.getState().serverConfig) {
+          setValidationState({
+            isValidating: false,
+            isValid: true,
+            error: null,
+          });
+          return;
+        }
         let errorMessage = '服务器连接失败';
 
         if (error instanceof Error) {
