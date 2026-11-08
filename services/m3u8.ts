@@ -1,4 +1,5 @@
 import { Logger } from '@/utils/Logger';
+import { utf8ByteLength } from '@/utils/utf8ByteLength';
 
 const logger = Logger.withTag('M3U8');
 
@@ -13,7 +14,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_ENTRIES = 500;
 // 播放列表最大体积：m3u8 索引文件通常 < 100KB，1MB 已足够（R13）
 const MAX_PLAYLIST_BYTES = 1024 * 1024;
-// 无外部 signal 时的默认超时（R13）
+// 默认超时（R13）：外部 signal 与超时联动，任一发生都中止，避免服务端挂起时卡住调用方
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 const evictCacheIfNeeded = () => {
@@ -51,12 +52,21 @@ export const getResolutionFromM3U8 = async (
     return null;
   }
 
-  // 无外部 signal 时使用默认超时（R13）
-  const controller = signal ? null : new AbortController();
-  const timeoutId = controller ? setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS) : null;
+  // 外部 signal 与默认超时联动：只传 signal 时若服务端挂起，fetch 会一直等，
+  // 详情页的 Promise.all 就卡住、详情出不来。超时与调用方取消任一发生都中止。
+  const linked = new AbortController();
+  const timeoutId = setTimeout(() => linked.abort(), DEFAULT_TIMEOUT_MS);
+  const onCallerAbort = () => linked.abort();
+  if (signal) {
+    if (signal.aborted) {
+      linked.abort();
+    } else {
+      signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+  }
   try {
     const fetchStart = performance.now();
-    const response = await fetch(url, { signal: signal ?? controller!.signal });
+    const response = await fetch(url, { signal: linked.signal });
     const fetchEnd = performance.now();
     logger.info(`[PERF] M3U8 fetch took ${(fetchEnd - fetchStart).toFixed(2)}ms, status: ${response.status}`);
 
@@ -107,7 +117,10 @@ export const getResolutionFromM3U8 = async (
     logger.info(`[PERF] M3U8 resolution detection ERROR - took ${(perfEnd - perfStart).toFixed(2)}ms, error: ${error}`);
     return null;
   } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener("abort", onCallerAbort);
+    }
   }
 };
 
@@ -117,9 +130,10 @@ export const getResolutionFromM3U8 = async (
 const readTextWithLimit = async (response: Response, maxBytes: number): Promise<string | null> => {
   const reader = response.body?.getReader();
   if (!reader) {
-    // 无 body 流时回退（通常不会发生）
+    // 无 body 流时回退：按 UTF-8 字节判断（text.length 是 UTF-16 码元数，
+    // 中文会低估约 3 倍；与 api.ts / m3u.ts 的 OTV-3 保持一致）
     const text = await response.text();
-    return text.length <= maxBytes ? text : null;
+    return utf8ByteLength(text) <= maxBytes ? text : null;
   }
   const decoder = new TextDecoder();
   let totalBytes = 0;
