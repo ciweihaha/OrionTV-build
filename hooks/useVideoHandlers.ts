@@ -3,7 +3,7 @@ import type { VideoPlayer } from 'expo-video';
 import { isPictureInPictureSupported } from 'expo-video';
 import Toast from 'react-native-toast-message';
 import usePlayerStore, { type PlaybackStatus } from '@/stores/playerStore';
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('VideoHandlers');
 
