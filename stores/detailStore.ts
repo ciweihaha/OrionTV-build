@@ -65,37 +65,17 @@ const useDetailStore = create<DetailState>((set, get) => ({
     const { videoSource } = useSettingsStore.getState();
 
     const processAndSetResults = async (results: SearchResult[], merge = false) => {
-      const resolutionStart = performance.now();
-      logger.info(`[PERF] Resolution detection START - processing ${results.length} sources`);
-      
-      const resultsWithResolution = await Promise.all(
-        results.map(async (searchResult) => {
-          let resolution;
-          const m3u8Start = performance.now();
-          try {
-            if (searchResult.episodes && searchResult.episodes.length > 0) {
-              resolution = await getResolutionFromM3U8(searchResult.episodes[0], signal);
-            }
-          } catch (e) {
-            if ((e as Error).name !== "AbortError") {
-              logger.info(`Failed to get resolution for ${searchResult.source_name}`, e);
-            }
-          }
-          const m3u8End = performance.now();
-          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${resolution || 'failed'})`);
-          return { ...searchResult, resolution };
-        })
-      );
-      
-      const resolutionEnd = performance.now();
-      logger.info(`[PERF] Resolution detection COMPLETE - took ${(resolutionEnd - resolutionStart).toFixed(2)}ms`);
-
+      // 先把结果写进 store：详情页立刻可看，不用等最慢的那个 m3u8
+      // （原来 Promise.all 等全部清晰度测完才写，一个挂起的源能拖 10 秒，
+      // 详情页一直转圈）；清晰度随后逐个补，测出一个更新一个
       if (signal.aborted) return;
 
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        const newResults = resultsWithResolution.filter((r) => !existingSources.has(r.source));
-        const finalResults = merge ? [...state.searchResults, ...newResults] : resultsWithResolution;
+        const newResults = results.filter((r) => !existingSources.has(r.source));
+        const finalResults: SearchResultWithResolution[] = merge
+          ? [...state.searchResults, ...newResults]
+          : results;
 
         return {
           searchResults: finalResults,
@@ -107,6 +87,32 @@ const useDetailStore = create<DetailState>((set, get) => ({
           detail: state.detail ?? finalResults[0] ?? null,
         };
       });
+
+      // 后台逐个测清晰度：不 await，调用方清 loading 不用等它；
+      // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写
+      void Promise.all(
+        results.map(async (searchResult) => {
+          let resolution;
+          try {
+            if (searchResult.episodes && searchResult.episodes.length > 0) {
+              resolution = await getResolutionFromM3U8(searchResult.episodes[0], signal);
+            }
+          } catch (e) {
+            if ((e as Error).name !== "AbortError") {
+              logger.info(`Failed to get resolution for ${searchResult.source_name}`, e);
+            }
+          }
+          if (signal.aborted || !resolution) return;
+          set((state) => ({
+            searchResults: state.searchResults.map((r) =>
+              r.source === searchResult.source ? { ...r, resolution } : r
+            ),
+            sources: state.sources.map((s) =>
+              s.source === searchResult.source ? { ...s, resolution } : s
+            ),
+          }));
+        })
+      );
     };
 
     try {
