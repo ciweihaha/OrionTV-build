@@ -36,9 +36,23 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
       onChanged();
     };
 
+    const [selection, setSelection] = useState<{ start: number; end: number }>({
+      start: 0,
+      end: 0,
+    });
+    // 当用户手动移动光标或选中文本时，同步到 state（可选）
+    const onSelectionChange = ({
+      nativeEvent: { selection },
+    }: any) => {
+      setSelection(selection);
+    };
+
     useImperativeHandle(ref, () => ({
       setInputValue: (value: string) => {
         setApiBaseUrl(value);
+        // 远程输入是整串替换，不经过 onSelectionChange：光标会留在旧位置，
+        // 之后在电视上接着打字会插到文本中间——直接移到末尾
+        setSelection({ start: value.length, end: value.length });
         onChanged();
       },
     }));
@@ -69,17 +83,6 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
     }
 
     useTVEventHandler(handleTVEvent);
-
-    const [selection, setSelection] = useState<{ start: number; end: number }>({
-      start: 0,
-      end: 0,
-    });
-    // 当用户手动移动光标或选中文本时，同步到 state（可选）
-    const onSelectionChange = ({
-      nativeEvent: { selection },
-    }: any) => {
-      setSelection(selection);
-    };
 
     return (
       <SettingsSection focusable onFocus={handleSectionFocus} onBlur={handleSectionBlur}
