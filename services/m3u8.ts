@@ -64,6 +64,12 @@ export const getResolutionFromM3U8 = async (
       signal.addEventListener("abort", onCallerAbort, { once: true });
     }
   }
+  // 失败也缓存（负缓存）：挂掉的 m3u8 不缓存的话，每次打开详情页都要
+  // 再等一次 10 秒超时；调用方取消不算失败，不缓存（下次打开重测）
+  const cacheResult = (resolution: string | null) => {
+    evictCacheIfNeeded();
+    resolutionCache[url] = { resolution, timestamp: Date.now() };
+  };
   try {
     const fetchStart = performance.now();
     const response = await fetch(url, { signal: linked.signal });
@@ -71,6 +77,7 @@ export const getResolutionFromM3U8 = async (
     logger.info(`[PERF] M3U8 fetch took ${(fetchEnd - fetchStart).toFixed(2)}ms, status: ${response.status}`);
 
     if (!response.ok) {
+      cacheResult(null);
       return null;
     }
 
@@ -79,6 +86,7 @@ export const getResolutionFromM3U8 = async (
     const playlist = await readTextWithLimit(response, MAX_PLAYLIST_BYTES);
     if (playlist === null) {
       logger.info(`[PERF] M3U8 playlist exceeded ${MAX_PLAYLIST_BYTES} bytes, rejected`);
+      cacheResult(null);
       return null;
     }
     const lines = playlist.split("\n");
@@ -102,11 +110,7 @@ export const getResolutionFromM3U8 = async (
     logger.info(`[PERF] M3U8 parsing took ${(parseEnd - parseStart).toFixed(2)}ms, lines: ${lines.length}`);
 
     // 2. Store result in cache
-    evictCacheIfNeeded();
-    resolutionCache[url] = {
-      resolution: resolutionString,
-      timestamp: Date.now(),
-    };
+    cacheResult(resolutionString);
 
     const perfEnd = performance.now();
     logger.info(`[PERF] M3U8 resolution detection COMPLETE - took ${(perfEnd - perfStart).toFixed(2)}ms, resolution: ${resolutionString}`);
@@ -115,6 +119,8 @@ export const getResolutionFromM3U8 = async (
   } catch (error) {
     const perfEnd = performance.now();
     logger.info(`[PERF] M3U8 resolution detection ERROR - took ${(perfEnd - perfStart).toFixed(2)}ms, error: ${error}`);
+    // 调用方取消不缓存；超时/网络错误按失败缓存，避免反复等 10 秒
+    if (!signal?.aborted) cacheResult(null);
     return null;
   } finally {
     clearTimeout(timeoutId);
