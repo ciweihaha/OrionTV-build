@@ -9,7 +9,11 @@ type StyledButtonProps = ComponentProps<typeof StyledButton> & {
 export const MediaButton = ({ timeLabel, ...props }: StyledButtonProps) => (
   <View>
     <StyledButton {...props} style={[styles.mediaControlButton, props.style]} variant="ghost" />
-    {timeLabel && <Text style={styles.timeLabel}>{timeLabel}</Text>}
+    {timeLabel && (
+      <Text pointerEvents="none" style={styles.timeLabel}>
+        {timeLabel}
+      </Text>
+    )}
   </View>
 );
 
