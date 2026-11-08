@@ -34,7 +34,7 @@ function isSectionItem(
 
 export default function SettingsScreen() {
   const { loadSettings, saveSettings, setApiBaseUrl, setM3uUrl } = useSettingsStore();
-  const { lastMessage, targetPage, clearMessage } = useRemoteControlStore();
+  const { lastMessage, lastMessageAt, targetPage, clearMessage } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
 
@@ -73,13 +73,14 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     if (lastMessage && !targetPage) {
-      const realMessage = lastMessage.split("_")[0];
-      handleRemoteInput(realMessage);
+      // 消息原样使用：之前 split("_")[0] 会把含下划线的地址截断
+      // （如 m3u 链接里的下划线）；重复消息靠 lastMessageAt 区分
+      handleRemoteInput(lastMessage);
       clearMessage(); // Clear the message after processing
       markAsChanged();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMessage, targetPage]);
+  }, [lastMessage, lastMessageAt, targetPage]);
 
   const handleSave = async () => {
     setIsLoading(true);
