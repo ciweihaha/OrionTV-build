@@ -22,7 +22,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   rate?: string;
   sourceName?: string;
   progress?: number; // 播放进度，0-1之间的小数
-  playTime?: number; // 播放时间 in ms
+  playTime?: number; // 播放时间，单位秒（play_time 存的是秒，传给播放页时再 ×1000 转毫秒）
   episodeIndex?: number; // 剧集索引
   totalEpisodes?: number; // 总集数
   onFocus?: () => void;
