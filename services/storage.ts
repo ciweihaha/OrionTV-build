@@ -43,6 +43,14 @@ export interface AppSettings {
     };
   };
   m3uUrl: string;
+  /** 播到片头时自动跳到片头结束处（默认开启） */
+  autoSkipIntro?: boolean;
+  /** 播到片尾附近时弹出下一集预告（默认开启） */
+  nextEpisodeOverlayEnabled?: boolean;
+  /** 无痕模式：开启后不写入播放记录（默认关闭） */
+  incognitoMode?: boolean;
+  /** 后台播放与画中画：切到后台继续播放音频，支持的设备自动进画中画（默认关闭） */
+  backgroundPlayback?: boolean;
 }
 
 export interface LoginCredentials {
@@ -235,6 +243,14 @@ export class PlayRecordManager {
 
     // Player settings are always saved locally
     await PlayerSettingsManager.save(source, id, { introEndTime, outroStartTime });
+
+    // 无痕模式：只拦截播放记录（最近播放/断点续播）写入，片头片尾标记等
+    // 播放器个性化设置不受影响，收藏也不受影响。
+    const { incognitoMode } = await SettingsManager.get();
+    if (incognitoMode) {
+      logger.info("[INCOGNITO] Skip saving play record");
+      return;
+    }
 
     if (this.getStorageType() === "localstorage") {
       const allRecords = await this.getAll();
@@ -455,6 +471,10 @@ export class SettingsManager {
         sources: {},
       },
       m3uUrl: "",
+      autoSkipIntro: true,
+      nextEpisodeOverlayEnabled: true,
+      incognitoMode: false,
+      backgroundPlayback: false,
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

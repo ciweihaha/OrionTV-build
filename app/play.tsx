@@ -9,12 +9,13 @@ import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
 import { SeekingBar } from "@/components/SeekingBar";
-// import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
+import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
 import Toast from "react-native-toast-message";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useVideoHandlers } from "@/hooks/useVideoHandlers";
 import { Logger } from '@/utils/Logger';
@@ -104,17 +105,21 @@ export default function PlayScreen() {
   const {
     isLoading,
     showControls,
-    // showNextEpisodeOverlay,
+    showNextEpisodeOverlay,
+    episodes,
+    currentEpisodeIndex,
     initialPosition,
     introEndTime,
     playbackRate,
     setVideoPlayer,
     handlePlaybackStatusUpdate,
     setShowControls,
-    // setShowNextEpisodeOverlay,
+    playEpisode,
+    dismissNextEpisodeOverlay,
     reset,
     loadVideo,
   } = usePlayerStore();
+  const { autoSkipIntro, backgroundPlayback } = useSettingsStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
   // expo-video player: source changes auto-replace; setup sets the
@@ -132,6 +137,8 @@ export default function PlayScreen() {
     playbackRate,
     handlePlaybackStatusUpdate,
     deviceType,
+    autoSkipIntro,
+    backgroundPlayback,
   });
 
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
@@ -170,9 +177,17 @@ export default function PlayScreen() {
     }
   }, [deviceType, tvRemoteHandler, setShowControls, showControls]);
 
+  // 后台播放开关：开启后播放器在切后台时保持活跃（画中画/后台音频继续），
+  // 关闭时恢复默认行为（切后台即暂停，见下方的 AppState 监听）。
+  useEffect(() => {
+    if (player) {
+      player.staysActiveInBackground = backgroundPlayback;
+    }
+  }, [player, backgroundPlayback]);
+
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === "background" || nextAppState === "inactive") {
+      if ((nextAppState === "background" || nextAppState === "inactive") && !backgroundPlayback) {
         player.pause();
       }
     };
@@ -182,7 +197,7 @@ export default function PlayScreen() {
     return () => {
       subscription.remove();
     };
-  }, [player]);
+  }, [player, backgroundPlayback]);
 
   useEffect(() => {
     const backAction = () => {
@@ -250,7 +265,12 @@ export default function PlayScreen() {
           </View>
         )}
 
-        {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
+        <NextEpisodeOverlay
+          visible={showNextEpisodeOverlay}
+          nextTitle={episodes[currentEpisodeIndex + 1]?.title}
+          onPlayNext={() => playEpisode(currentEpisodeIndex + 1)}
+          onCancel={dismissNextEpisodeOverlay}
+        />
       </TouchableOpacity>
 
       <EpisodeSelectionModal />

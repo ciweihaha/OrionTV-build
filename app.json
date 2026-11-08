@@ -29,12 +29,20 @@
           }
         }
       ],
-      "expo-router"
+      "expo-router",
+      [
+        "expo-video",
+        {
+          "supportsPictureInPicture": true,
+          "supportsBackgroundPlayback": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "name": "OrionTV",
+    "version": "1.6.0",
     "slug": "OrionTV",
     "orientation": "default",
     "icon": "./assets/images/icon.png",

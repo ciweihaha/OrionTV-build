@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { VideoPlayer } from 'expo-video';
+import { isPictureInPictureSupported } from 'expo-video';
 import Toast from 'react-native-toast-message';
 import usePlayerStore, { type PlaybackStatus } from '@/stores/playerStore';
 import Logger from '@/utils/Logger';
@@ -14,6 +15,10 @@ interface UseVideoHandlersProps {
   playbackRate: number;
   handlePlaybackStatusUpdate: (status: PlaybackStatus) => void;
   deviceType: string;
+  /** 片头自动跳过开关（默认开启）；关闭后就绪时不跳到片头结束处，播放中也不自动跳 */
+  autoSkipIntro: boolean;
+  /** 后台播放与画中画开关（默认关闭）；关闭时不开启画中画 */
+  backgroundPlayback: boolean;
 }
 
 /**
@@ -30,6 +35,8 @@ export const useVideoHandlers = ({
   playbackRate,
   handlePlaybackStatusUpdate,
   deviceType,
+  autoSkipIntro,
+  backgroundPlayback,
 }: UseVideoHandlersProps) => {
   // Synthesized status, kept in a ref and emitted on every player event.
   const statusRef = useRef<PlaybackStatus>({
@@ -42,6 +49,15 @@ export const useVideoHandlers = ({
   });
   // URL the ready-seek/autoplay already ran for (per source).
   const readyHandledForRef = useRef<string | null>(null);
+
+  // 画中画是否受当前设备支持（不支持时开关只控制后台音频，优雅降级）。
+  const pipSupported = useMemo(() => {
+    try {
+      return isPictureInPictureSupported();
+    } catch {
+      return false;
+    }
+  }, []);
 
   const emit = useCallback(
     (patch: Partial<PlaybackStatus>) => {
@@ -130,11 +146,16 @@ export const useVideoHandlers = ({
             readyHandledForRef.current = url;
             logger.info(`[PERF] Video readyToPlay - video ready to play`);
             try {
-              // 1. 先设置位置（如果需要）
-              const jumpPosition = initialPosition || introEndTime || 0;
+              // 1. 先设置位置（如果需要）：断点优先；无断点且开启自动跳过片头时跳到片头结束处
+              const skipIntroOnReady = autoSkipIntro && !initialPosition && introEndTime ? introEndTime : 0;
+              const jumpPosition = initialPosition || skipIntroOnReady || 0;
               if (jumpPosition > 0) {
                 logger.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
                 player.currentTime = jumpPosition / 1000;
+              }
+              if (skipIntroOnReady > 0) {
+                // 本集片头已在就绪时跳过，播放中不再重复跳（用户可手动拉回片头重看）
+                usePlayerStore.setState({ introSkipped: true });
               }
               // 2. 显式调用播放以确保自动播放
               logger.info(`[AUTOPLAY] Attempting to start playback after ready`);
@@ -196,7 +217,7 @@ export const useVideoHandlers = ({
     return () => {
       subs.forEach((s) => s.remove());
     };
-  }, [player, emit, onError, currentEpisode?.url, initialPosition, introEndTime]);
+  }, [player, emit, onError, currentEpisode?.url, initialPosition, introEndTime, autoSkipIntro]);
 
   // Keep the player rate in sync with the store's playbackRate.
   useEffect(() => {
@@ -210,6 +231,10 @@ export const useVideoHandlers = ({
       player,
       contentFit: 'contain' as const,
       nativeControls: deviceType !== 'tv',
+      // 画中画：仅在开启后台播放且设备支持时生效（Android 12+ / iOS），
+      // 不支持的设备上 isPictureInPictureSupported() 返回 false，开关只控制后台音频。
+      allowsPictureInPicture: backgroundPlayback && pipSupported,
+      startsPictureInPictureAutomatically: backgroundPlayback && pipSupported,
     },
   };
 };

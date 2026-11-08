@@ -10,6 +10,7 @@ import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection, APIConfigSectionRef } from "@/components/settings/APIConfigSection";
 import { LiveStreamSection, LiveStreamSectionRef } from "@/components/settings/LiveStreamSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
+import { PlaybackSection } from "@/components/settings/PlaybackSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
 import Toast from "react-native-toast-message";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -135,6 +136,18 @@ export default function SettingsScreen() {
         />
       ),
       key: "livestream",
+    },
+    {
+      component: (
+        <PlaybackSection
+          onChanged={markAsChanged}
+          onFocus={() => {
+            setCurrentFocusIndex(3);
+            setCurrentSection("playback");
+          }}
+        />
+      ),
+      key: "playback",
     },
     Platform.OS === "android" && {
       component: <UpdateSection />,

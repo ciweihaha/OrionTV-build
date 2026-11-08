@@ -2,6 +2,7 @@ import { create } from "zustand";
 import Toast from "react-native-toast-message";
 import type { VideoPlayer } from "expo-video";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
+import { useSettingsStore } from "@/stores/settingsStore";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import Logger from '@/utils/Logger';
 
@@ -45,6 +46,10 @@ interface PlayerState {
   showSourceModal: boolean;
   showSpeedModal: boolean;
   showNextEpisodeOverlay: boolean;
+  /** 本集是否已自动跳过片头（每集只跳一次，用户手动拉回片头后不再重复跳） */
+  introSkipped: boolean;
+  /** 用户本集是否已点掉下一集预告（点掉后本集播完不再自动播放下一集） */
+  nextEpisodeDismissed: boolean;
   isSeeking: boolean;
   seekPosition: number;
   progressPosition: number;
@@ -70,6 +75,8 @@ interface PlayerState {
   setShowSourceModal: (show: boolean) => void;
   setShowSpeedModal: (show: boolean) => void;
   setShowNextEpisodeOverlay: (show: boolean) => void;
+  /** 点掉下一集预告：隐藏浮层，且本集播完不再自动播放下一集 */
+  dismissNextEpisodeOverlay: () => void;
   setPlaybackRate: (rate: number) => void;
   setIntroEndTime: () => void;
   setOutroStartTime: () => void;
@@ -92,6 +99,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   showSourceModal: false,
   showSpeedModal: false,
   showNextEpisodeOverlay: false,
+  introSkipped: false,
+  nextEpisodeDismissed: false,
   isSeeking: false,
   seekPosition: 0,
   progressPosition: 0,
@@ -247,6 +256,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         episodes: mappedEpisodes,
         introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
         outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
+        introSkipped: false,
+        nextEpisodeDismissed: false,
+        showNextEpisodeOverlay: false,
       });
       
       const perfEnd = performance.now();
@@ -267,6 +279,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       set({
         currentEpisodeIndex: index,
         showNextEpisodeOverlay: false,
+        introSkipped: false,
+        nextEpisodeDismissed: false,
         initialPosition: 0,
         progressPosition: 0,
         seekPosition: 0,
@@ -417,8 +431,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       return;
     }
 
-    const { currentEpisodeIndex, episodes, outroStartTime, playEpisode } = get();
+    const { currentEpisodeIndex, episodes, outroStartTime, introEndTime, introSkipped, nextEpisodeDismissed, playEpisode, videoPlayer } = get();
     const detail = useDetailStore.getState().detail;
+    const { autoSkipIntro, nextEpisodeOverlayEnabled } = useSettingsStore.getState();
 
     if (
       outroStartTime &&
@@ -431,11 +446,32 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       }
     }
 
+    // 片头自动跳过：每集只跳一次（开关默认开启，可在设置里关闭）
+    if (
+      autoSkipIntro &&
+      introEndTime &&
+      introEndTime > 0 &&
+      newStatus.isPlaying &&
+      newStatus.positionMillis < introEndTime &&
+      !introSkipped
+    ) {
+      let skipped = false;
+      try {
+        if (videoPlayer) {
+          videoPlayer.currentTime = introEndTime / 1000;
+          skipped = true;
+        }
+      } catch (error) {
+        logger.debug("Failed to skip intro:", error);
+      }
+      if (skipped) set({ introSkipped: true });
+    }
+
     if (detail && newStatus.durationMillis) {
       get()._savePlayRecord();
 
       const isNearEnd = newStatus.positionMillis / newStatus.durationMillis > 0.95;
-      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime) {
+      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime && nextEpisodeOverlayEnabled && !nextEpisodeDismissed) {
         set({ showNextEpisodeOverlay: true });
       } else {
         set({ showNextEpisodeOverlay: false });
@@ -443,7 +479,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (newStatus.didJustFinish) {
-      if (currentEpisodeIndex < episodes.length - 1) {
+      // 用户点掉预告后，本集播完不再自动播放下一集
+      if (currentEpisodeIndex < episodes.length - 1 && !nextEpisodeDismissed) {
         playEpisode(currentEpisodeIndex + 1);
       }
     }
@@ -458,6 +495,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   setShowSourceModal: (show) => set({ showSourceModal: show }),
   setShowSpeedModal: (show) => set({ showSpeedModal: show }),
   setShowNextEpisodeOverlay: (show) => set({ showNextEpisodeOverlay: show }),
+  dismissNextEpisodeOverlay: () => set({ showNextEpisodeOverlay: false, nextEpisodeDismissed: true }),
 
   setPlaybackRate: async (rate) => {
     const { videoPlayer } = get();
@@ -488,6 +526,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       showSourceModal: false,
       showSpeedModal: false,
       showNextEpisodeOverlay: false,
+      introSkipped: false,
+      nextEpisodeDismissed: false,
       initialPosition: 0,
       playbackRate: 1.0,
       introEndTime: undefined,

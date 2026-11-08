@@ -23,6 +23,10 @@ interface SettingsState {
   apiBaseUrl: string;
   m3uUrl: string;
   remoteInputEnabled: boolean;
+  autoSkipIntro: boolean;
+  nextEpisodeOverlayEnabled: boolean;
+  incognitoMode: boolean;
+  backgroundPlayback: boolean;
   videoSource: {
     enabledAll: boolean;
     sources: {
@@ -37,6 +41,10 @@ interface SettingsState {
   setApiBaseUrl: (url: string) => void;
   setM3uUrl: (url: string) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
+  setAutoSkipIntro: (enabled: boolean) => void;
+  setNextEpisodeOverlayEnabled: (enabled: boolean) => void;
+  setIncognitoMode: (enabled: boolean) => void;
+  setBackgroundPlayback: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
   showModal: () => void;
@@ -48,6 +56,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   m3uUrl: "",
   liveStreamSources: [],
   remoteInputEnabled: false,
+  autoSkipIntro: true,
+  nextEpisodeOverlayEnabled: true,
+  incognitoMode: false,
+  backgroundPlayback: false,
   isModalVisible: false,
   serverConfig: null,
   isLoadingServerConfig: false,
@@ -61,6 +73,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       apiBaseUrl: settings.apiBaseUrl,
       m3uUrl: settings.m3uUrl,
       remoteInputEnabled: settings.remoteInputEnabled || false,
+      autoSkipIntro: settings.autoSkipIntro ?? true,
+      nextEpisodeOverlayEnabled: settings.nextEpisodeOverlayEnabled ?? true,
+      incognitoMode: settings.incognitoMode ?? false,
+      backgroundPlayback: settings.backgroundPlayback ?? false,
       videoSource: settings.videoSource || {
         enabledAll: true,
         sources: {},
@@ -93,9 +109,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
   setM3uUrl: (url) => set({ m3uUrl: url }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
+  setAutoSkipIntro: (enabled) => set({ autoSkipIntro: enabled }),
+  setNextEpisodeOverlayEnabled: (enabled) => set({ nextEpisodeOverlayEnabled: enabled }),
+  setIncognitoMode: (enabled) => set({ incognitoMode: enabled }),
+  setBackgroundPlayback: (enabled) => set({ backgroundPlayback: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, autoSkipIntro, nextEpisodeOverlayEnabled, incognitoMode, backgroundPlayback } = get();
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
     let processedApiBaseUrl = apiBaseUrl.trim();
@@ -122,6 +142,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       m3uUrl,
       remoteInputEnabled,
       videoSource,
+      autoSkipIntro,
+      nextEpisodeOverlayEnabled,
+      incognitoMode,
+      backgroundPlayback,
     });
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
       await AsyncStorage.setItem('authCookies', '');
