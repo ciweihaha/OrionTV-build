@@ -13,7 +13,13 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, togglePlayPause, seek } = usePlayerStore();
+  // 按字段订阅：这个 hook 在播放页里调用，整库订阅会让播放页跟着每 0.5s 的
+  // status 更新重渲染（第 6 轮只改了播放页本身，这里是漏网的订阅点）
+  const showControls = usePlayerStore((s) => s.showControls);
+  const setShowControls = usePlayerStore((s) => s.setShowControls);
+  const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
+  const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
+  const seek = usePlayerStore((s) => s.seek);
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
