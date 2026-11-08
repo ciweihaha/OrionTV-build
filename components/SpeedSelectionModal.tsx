@@ -19,7 +19,11 @@ const SPEED_OPTIONS: SpeedOption[] = [
 ];
 
 export const SpeedSelectionModal: React.FC = () => {
-  const { showSpeedModal, setShowSpeedModal, playbackRate, setPlaybackRate } = usePlayerStore();
+  // 按字段订阅：整库订阅会让它跟着每 0.5s 的 status 更新重渲染
+  const showSpeedModal = usePlayerStore((s) => s.showSpeedModal);
+  const setShowSpeedModal = usePlayerStore((s) => s.setShowSpeedModal);
+  const playbackRate = usePlayerStore((s) => s.playbackRate);
+  const setPlaybackRate = usePlayerStore((s) => s.setPlaybackRate);
 
   const onSelectSpeed = (rate: number) => {
     setPlaybackRate(rate);
