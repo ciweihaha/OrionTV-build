@@ -7,7 +7,7 @@ const logger = Logger.withTag('RemoteControl');
 // 配对码有效期：服务器每次启动时重新生成
 const PAIRING_CODE_LENGTH = 4;
 
-const getRemotePageHTML = (paired: boolean) => {
+const getRemotePageHTML = () => {
   return `
   <!DOCTYPE html>
   <html>
@@ -24,13 +24,13 @@ const getRemotePageHTML = (paired: boolean) => {
       button:active { background-color: #0056b3; }
       button:disabled { background-color: #444; }
       #pairSection { width: 100%; }
-      #inputSection { width: 100%; display: ${paired ? 'flex' : 'none'}; flex-direction: column; align-items: center; }
+      #inputSection { width: 100%; display: none; flex-direction: column; align-items: center; }
       .hint { color: #888; font-size: 14px; margin-bottom: 20px; text-align: center; }
     </style>
   </head>
   <body>
     <div id="container">
-      <div id="pairSection" style="display: ${paired ? 'none' : 'block'}; width: 100%;">
+      <div id="pairSection" style="display: block; width: 100%;">
         <h3>配对验证</h3>
         <p class="hint">请输入电视屏幕上显示的 ${PAIRING_CODE_LENGTH} 位配对码</p>
         <input id="code" placeholder="配对码" inputmode="numeric" maxlength="${PAIRING_CODE_LENGTH}" />
@@ -43,7 +43,15 @@ const getRemotePageHTML = (paired: boolean) => {
       </div>
     </div>
     <script>
-      let pairingCode = ${paired ? 'sessionStorage.getItem("orion_pair_code") || ""' : '""'};
+      let pairingCode = "";
+      // 已配对过的浏览器直接进输入页：服务端每次都返回配对页（它不知道浏览器状态），
+      // 由前端从 sessionStorage 恢复上次配对成功的码
+      const savedCode = sessionStorage.getItem("orion_pair_code");
+      if (savedCode) {
+        pairingCode = savedCode;
+        document.getElementById("pairSection").style.display = "none";
+        document.getElementById("inputSection").style.display = "flex";
+      }
       function pair() {
         const input = document.getElementById("code");
         const code = input.value.trim();
@@ -71,6 +79,17 @@ const getRemotePageHTML = (paired: boolean) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Pairing-Code': pairingCode },
             body: JSON.stringify({ message: value })
+          })
+          .then(r => {
+            if (!r.ok) {
+              // 配对码已失效（电视重启后配对码会变）：清掉旧码，回到配对页重配，
+              // 否则用户会一直停在输入页、消息悄悄被拒
+              sessionStorage.removeItem("orion_pair_code");
+              pairingCode = "";
+              document.getElementById("pairSection").style.display = "block";
+              document.getElementById("inputSection").style.display = "none";
+              alert("配对已失效，请重新输入配对码");
+            }
           })
           .catch(err => console.warn('Message send failed:', err));
           input.value = '';
@@ -154,7 +173,7 @@ class RemoteControlService {
           return {
             statusCode: 200,
             headers: { "Content-Type": "text/html; charset=utf-8" },
-            body: getRemotePageHTML(false),
+            body: getRemotePageHTML(),
           };
         } else if (request.method === "POST" && request.url === "/message") {
           if (!this.isPairingValid(request)) {
