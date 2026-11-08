@@ -544,6 +544,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: () => {
+    // 上次播放残留的快进定时器一并清掉，别让它在新视频上把 isSeeking 改回去
+    const seekTimeout = get()._seekTimeout;
+    if (seekTimeout) {
+      clearTimeout(seekTimeout);
+    }
     set({
       episodes: [],
       currentEpisodeIndex: 0,
@@ -560,6 +565,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       playbackRate: 1.0,
       introEndTime: undefined,
       outroStartTime: undefined,
+      // 快进状态与断点保存节流标志也要复位：否则退出播放页后 10 秒内
+      // 再开一个视频，_savePlayRecord 会被上一个视频的节流挡住，
+      // 新视频开头的断点保存全丢；isSeeking 残留则让进度条错显示 1 秒
+      isSeeking: false,
+      seekPosition: 0,
+      _seekTimeout: undefined,
+      _isRecordSaveThrottled: false,
     });
   },
 
