@@ -411,12 +411,26 @@ const useHomeStore = create<HomeState>((set, get) => ({
             }
           }
 
-          // 更新状态时使用所有数据
-          set((state) => ({
-            contentData: [...state.contentData, ...newItems],
-            pageStart: state.pageStart + newItems.length,
-            hasMore: result.list.length !== 0,
-          }));
+          // 翻页去重：与 CMS 分支同理，豆瓣分页接口换页时也可能返回
+          // 与上一页重叠的条目，按片名去重，网格不再出现重复卡片
+          set((state) => {
+            const seen = new Set<string>();
+            for (const it of state.contentData) {
+              const k = String(it.title || "").trim().toLowerCase();
+              if (k) seen.add(k);
+            }
+            const deduped = newItems.filter((it) => {
+              const k = String(it.title || "").trim().toLowerCase();
+              if (!k || seen.has(k)) return false;
+              seen.add(k);
+              return true;
+            });
+            return {
+              contentData: [...state.contentData, ...deduped],
+              pageStart: state.pageStart + deduped.length,
+              hasMore: result.list.length !== 0,
+            };
+          });
         }
       } else if (selectedCategory.tags) {
         // It's a container category, do not load content, but clear current content
