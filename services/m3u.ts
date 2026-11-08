@@ -1,4 +1,4 @@
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 import { utf8ByteLength } from '../utils/utf8ByteLength';
 import { M3uCacheManager } from './storage';
 
