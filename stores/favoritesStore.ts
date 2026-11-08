@@ -20,7 +20,8 @@ const useFavoritesStore = create<FavoritesState>((set) => ({
         ...value,
         key,
       }));
-      //   favoritesArray.sort((a, b) => (b.save_time || 0) - (a.save_time || 0));
+      // 最新收藏排在前面（save_time 缺失时按 0 算，顺序保持原样）
+      favoritesArray.sort((a, b) => (b.save_time || 0) - (a.save_time || 0));
       set({ favorites: favoritesArray, loading: false });
     } catch (e) {
       const error = e instanceof Error ? e.message : "获取收藏列表失败";
