@@ -220,7 +220,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
               ...record,
               id,
               source,
-              progress: record.play_time / record.total_time,
+              // total_time 为 0（保存时没拿到片长）时直接除会得到 Infinity/NaN，
+              // 续播进度条拿去算宽度会直接坏掉
+              progress: record.total_time > 0 ? record.play_time / record.total_time : 0,
               poster: record.cover,
               sourceName: record.source_name,
               episodeIndex: record.index,
