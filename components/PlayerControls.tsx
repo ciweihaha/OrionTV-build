@@ -183,32 +183,4 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 4,
   },
-  progressBarTouchable: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 30,
-    top: -10,
-    zIndex: 10,
-  },
-  controlButton: {
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  topRightContainer: {
-    padding: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 44, // Match TouchableOpacity default size for alignment
-  },
-  resolutionText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
 });
