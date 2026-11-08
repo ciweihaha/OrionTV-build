@@ -3,7 +3,7 @@ import { SearchResult, api } from "@/services/api";
 import { getResolutionFromM3U8 } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
-import Logger from "@/utils/Logger";
+import { Logger } from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
