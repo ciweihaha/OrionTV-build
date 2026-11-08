@@ -6,7 +6,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import Toast from 'react-native-toast-message';
 import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 import { Platform } from 'react-native';
 
 const logger = Logger.withTag('UpdateService');
