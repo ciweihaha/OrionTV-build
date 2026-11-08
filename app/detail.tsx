@@ -7,6 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { StyledButton } from "@/components/StyledButton";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
+import { api } from "@/services/api";
 import { FontAwesome } from "@expo/vector-icons";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -114,7 +115,7 @@ export default function DetailScreen() {
           {/* 海报和基本信息 */}
           <View style={dynamicStyles.mobileTopContainer}>
             <Image
-              source={{ uri: detail.poster }}
+              source={api.getImageSource(detail.poster)}
               style={dynamicStyles.mobilePoster}
               contentFit="cover"
               transition={200}
@@ -204,7 +205,7 @@ export default function DetailScreen() {
         <ScrollView style={dynamicStyles.scrollContainer}>
           <View style={dynamicStyles.topContainer}>
             <Image
-              source={{ uri: detail.poster }}
+              source={api.getImageSource(detail.poster)}
               style={dynamicStyles.poster}
               contentFit="cover"
               transition={200}

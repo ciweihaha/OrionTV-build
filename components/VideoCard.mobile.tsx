@@ -125,7 +125,7 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
         >
           <View style={styles.card}>
             <Image
-              source={{ uri: api.getImageProxyUrl(poster) }}
+              source={api.getImageSource(poster)}
               style={styles.poster}
               contentFit="cover"
               transition={200}

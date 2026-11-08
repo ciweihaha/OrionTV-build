@@ -169,7 +169,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
         >
           <View style={styles.card}>
             <Image
-              source={{ uri: api.getImageProxyUrl(poster) }}
+              source={api.getImageSource(poster)}
               style={styles.poster}
               contentFit="cover"
               transition={200}
@@ -195,15 +195,21 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
               </View>
             )}
 
-            {rate && (
-              <View style={styles.ratingContainer}>
-                <Star size={12} color="#FFD700" fill="#FFD700" />
-                <ThemedText style={styles.ratingText}>{rate}</ThemedText>
-              </View>
-            )}
-            {year && (
-              <View style={styles.yearBadge}>
-                <Text style={styles.badgeText}>{year}</Text>
+            {/* 右上角角标：评分和年份共用一个纵向容器，避免两者都 absolute
+                到 top:8/right:8 而互相遮挡；只有一个时不留空位 */}
+            {(rate || year) && (
+              <View style={styles.topRightBadges}>
+                {rate && (
+                  <View style={styles.ratingContainer}>
+                    <Star size={12} color="#FFD700" fill="#FFD700" />
+                    <ThemedText style={styles.ratingText}>{rate}</ThemedText>
+                  </View>
+                )}
+                {year && (
+                  <View style={styles.yearBadge}>
+                    <Text style={styles.badgeText}>{year}</Text>
+                  </View>
+                )}
               </View>
             )}
             {sourceName && (
@@ -282,10 +288,14 @@ const styles = StyleSheet.create({
     top: 8,
     left: 8,
   },
-  ratingContainer: {
+  topRightBadges: {
     position: "absolute",
     top: 8,
     right: 8,
+    alignItems: "flex-end",
+    gap: 6,
+  },
+  ratingContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.7)",
@@ -318,9 +328,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   yearBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,

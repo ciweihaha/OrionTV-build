@@ -1,15 +1,9 @@
 import { create } from "zustand";
 import { api, SearchResult, PlayRecord } from "@/services/api";
-import type { AggFilters, AggFilterGroup, AggVideoItem } from "@/services/api";
-import { EMPTY_AGG_FILTERS } from "@/services/api";
+import type { AggVideoItem } from "@/services/api";
 import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
-
-// AggFilters / AggFilterGroup 的唯一定义在 services/api.ts，
-// 这里只做类型再导出，供 app/index.tsx 直接从 homeStore 引用，避免循环导入。
-export type { AggFilters, AggFilterGroup };
-export { EMPTY_AGG_FILTERS };
 
 export type RowItem = (SearchResult | PlayRecord) & {
   id: string;
@@ -32,18 +26,14 @@ export interface Category {
   tag?: string;
   tags?: string[];
   // 仅 CMS 分类用；不填 = 豆瓣模式（现有行为不变）。
-  // cmsType 与 tag/tags 互斥：进入 CMS 分类时 tag 不再生效，
-  // 回到豆瓣分类时 filters 不再生效（见 selectCategory 的切换处理）。
+  // cmsType 与 tag/tags 互斥：进入 CMS 分类时 tag 不再生效。
   cmsType?: 1 | 2 | 3 | 4; // agg 的 t：1 电影、2 电视剧、3 动漫、4 综艺
-  filters?: AggFilters; // 当前筛选，全空 = 不筛选
-  filterOptions?: AggFilterGroup[]; // agg 返回的 filters，原样存入，供 UI 渲染，不得硬编码
-  cmsFallback?: boolean; // 本次是否已回落到豆瓣（仅用于 UI 提示，不进缓存 key）
 }
 
 const initialCategories: Category[] = [
   { title: "最近播放", type: "record" },
   { title: "热门剧集", type: "tv", tag: "热门" },
-  { title: "电视剧", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧", "日本动画", "动画"], cmsType: 2, filters: { ...EMPTY_AGG_FILTERS } },
+  { title: "电视剧", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧", "日本动画", "动画"], cmsType: 2 },
   {
     title: "电影",
     type: "movie",
@@ -65,16 +55,15 @@ const initialCategories: Category[] = [
       "恐怖",
     ],
     cmsType: 1,
-    filters: { ...EMPTY_AGG_FILTERS },
   },
-  { title: "动漫", type: "tv", cmsType: 3, filters: { ...EMPTY_AGG_FILTERS } },
-  { title: "综艺", type: "tv", cmsType: 4, filters: { ...EMPTY_AGG_FILTERS } },
+  { title: "动漫", type: "tv", cmsType: 3 },
+  { title: "综艺", type: "tv", cmsType: 4 },
   { title: "豆瓣 Top250", type: "movie", tag: "top250" },
 ];
 
-// CMS 回落用的豆瓣 tag：agg 失败或无筛选空列表时用它回落豆瓣，
-// 不清空用户筛选、不写 CMS 缓存。电影/电视剧的回落 tag 与其 tags[0] 一致，
-// 动漫/综艺在 CMS 化后已无 tags/tag，故用这张固定映射表，不得再从 tags 里猜。
+// CMS 回落用的豆瓣 tag：agg 失败或首屏空列表时用它回落豆瓣，不写 CMS 缓存。
+// 电影/电视剧的回落 tag 与其 tags[0] 一致，动漫/综艺在 CMS 化后已无 tags/tag，
+// 故用这张固定映射表，不得再从 tags 里猜。
 const getCmsFallbackTag = (category: Category): string => {
   switch (category.title) {
     case "电影":
@@ -123,14 +112,10 @@ const MAX_ITEMS_PER_CACHE = 40; // 每个缓存最大条目数
 
 const getCacheKey = (category: Category) => {
   if (category.cmsType) {
-    const f = category.filters || EMPTY_AGG_FILTERS;
-    return `cms-${category.cmsType}-${category.title}-c=${f.cate}|a=${f.area}|y=${f.year}|l=${f.lang}|s=${f.score}|o=${f.order}`;
+    return `cms-${category.cmsType}-${category.title}`;
   }
   return `${category.type || 'unknown'}-${category.title}-${category.tag || ''}`;
 };
-
-// filterOptions / cmsFallback 不进缓存 key：前者是 UI 选项，后者是过程标志，
-// 否则同一筛选组合会因选项/回落状态不同而反复失效。
 
 const isValidCache = (cacheItem: CacheItem) => {
   return Date.now() - cacheItem.timestamp < CACHE_EXPIRE_TIME;
@@ -150,18 +135,6 @@ interface HomeState {
   fetchInitialData: () => Promise<void>;
   loadMoreData: () => Promise<void>;
   selectCategory: (category: Category) => void;
-  // CMS 筛选动作：仅当 selectedCategory.cmsType 存在时生效；
-  // 语义与 selectCategory 一致（清空 + 重查），且内部直接调 fetchInitialData，
-  // index.tsx 的 effect 对 CMS 模式不重复触发（见 index.tsx 注释），避免一次筛选发两次请求。
-  setAggFilters: (filters: Partial<AggFilters>) => Promise<void>;
-  clearAggFilters: () => Promise<void>;
-  // 1.4.1 筛选栏可见性：纯 UI 状态，默认 false（隐藏），与筛选值、缓存 key、
-  // 分页、回落逻辑完全无关。非 CMS 分类不渲染开关，故该值在非 CMS 下无意义；
-  // 切换分类时由 selectCategory 重置为 false（点到新类目又是隐藏的）。
-  // 筛选值变化（setAggFilters / clearAggFilters）不得改动它：选完不自动收起。
-  filtersVisible: boolean;
-  toggleFilters: () => void;
-  setFiltersVisible: (visible: boolean) => void;
   refreshPlayRecords: () => Promise<void>;
   clearError: () => void;
 }
@@ -179,8 +152,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
   aggPage: 0,
   hasMore: true,
   error: null,
-  // 1.4.1：进入任何分类时筛选栏默认隐藏，内容网格直接可见。
-  filtersVisible: false,
 
   fetchInitialData: async () => {
     const { apiBaseUrl } = useSettingsStore.getState();
@@ -252,14 +223,12 @@ const useHomeStore = create<HomeState>((set, get) => ({
         set({ contentData: rowItems, hasMore: false });
       } else if (selectedCategory.cmsType) {
         // CMS 分支必须放在豆瓣分支之前：CMS 分类同时残留 type 字段，
-        // 判断顺序决定走哪条路；tag 在 CMS 模式下不生效（见 setAggFilters）。
+        // 判断顺序决定走哪条路；tag 在 CMS 模式下不生效。
         const cmsType = selectedCategory.cmsType;
-        const filters = selectedCategory.filters || EMPTY_AGG_FILTERS;
         const nextPg = (get().aggPage || 0) + 1;
-        const isFiltered = Object.values(filters).some((v) => !!v);
 
         // 回落豆瓣：仅首屏（nextPg === 1）回落；翻页失败不回落、不清空已有列表，
-        // 直接抛到外层 catch 显示错误。回落不写 CMS 缓存、不清空用户筛选。
+        // 直接抛到外层 catch 显示错误。回落不写 CMS 缓存。
         const fallbackToDouban = async () => {
           const cat = get().selectedCategory;
           const fallbackType = cat.type === "movie" ? "movie" : "tv";
@@ -271,7 +240,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
             source: "douban",
           })) as RowItem[];
           set({
-            selectedCategory: { ...cat, cmsFallback: true },
             contentData: doubanItems,
             pageStart: doubanItems.length,
             aggPage: 0,
@@ -282,7 +250,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
         let result;
         try {
-          result = await api.getAggCategory(cmsType, nextPg, filters);
+          result = await api.getAggCategory(cmsType, nextPg);
         } catch (aggError) {
           if (nextPg === 1) {
             await fallbackToDouban();
@@ -290,18 +258,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
           }
           throw aggError;
         }
-        // agg 成功但无筛选却空列表 = 异常（CMS 大类按 agg 设计“宁可多不可空”），走回落；
-        // 有筛选的真实空结果不回落，显示“该筛选下暂无内容”（index.tsx 的空文案）。
-        if (result.list.length === 0 && !isFiltered && nextPg === 1) {
+        // agg 成功但首屏空列表 = 异常（CMS 大类按 agg 设计“宁可多不可空”），走回落。
+        if (result.list.length === 0 && nextPg === 1) {
           await fallbackToDouban();
           return;
         }
 
         const newItems = result.list.map(mapAggItem);
         const cacheKey = getCacheKey(selectedCategory);
-        const updatedCategory: Category = result.filters
-          ? { ...selectedCategory, filterOptions: result.filters, cmsFallback: false }
-          : selectedCategory;
         const nextHasMore = nextPg < result.pagecount;
 
         if (nextPg === 1) {
@@ -323,7 +287,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggPage: 1,
           });
           set({
-            selectedCategory: updatedCategory,
             contentData: newItems,
             pageStart: newItems.length,
             aggPage: 1,
@@ -341,7 +304,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             });
           }
           set((state) => {
-            // 2026-11-02 筛选/翻页去重：服务端改为按请求页码轮换上游站（筛选深分页的前提），
+            // 2026-11-02 翻页去重：服务端改为按请求页码轮换上游站，
             // 同一部影片可能在不同页由不同站返回（vod_id 前缀不同、片名相同），
             // 追加时按片名去重，网格不再出现重复卡片。
             const seen = new Set<string>();
@@ -356,7 +319,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
               return true;
             });
             return {
-              selectedCategory: updatedCategory,
               contentData: [...state.contentData, ...deduped],
               pageStart: state.pageStart + deduped.length,
               aggPage: nextPg,
@@ -470,16 +432,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
   selectCategory: (category: Category) => {
     const currentCategory = get().selectedCategory;
     const cacheKey = getCacheKey(category);
-    // 切换判定加 cmsType 与 filters：CMS 分类切回豆瓣、或同一标题下筛选变化时，
-    // 不能只靠 title/tag 判断，否则会残留上一模式的状态。
-    const filtersChanged =
-      JSON.stringify(currentCategory.filters || null) !== JSON.stringify(category.filters || null);
+    // 切换判定加 cmsType：CMS 分类切回豆瓣时，不能只靠 title/tag 判断，
+    // 否则会残留上一模式的状态。
 
-    if (currentCategory.title !== category.title || currentCategory.tag !== category.tag || currentCategory.cmsType !== category.cmsType || filtersChanged) {
-      // 切换分类即回到该分类的初始筛选（initialCategories 里的 EMPTY），
-      // 不把上一个 CMS 分类的筛选带到新分类；豆瓣分类本身不带 filters，天然清空。
-      // 1.4.1：切换分类同时重置筛选栏为隐藏——点到新类目时筛选又是隐藏的，
-      // 要点开关才出来；同分类重选（未进本分支）不重置，展开状态不受影响。
+    if (currentCategory.title !== category.title || currentCategory.tag !== category.tag || currentCategory.cmsType !== category.cmsType) {
       set({
         selectedCategory: category,
         contentData: [],
@@ -487,7 +443,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
         aggPage: 0,
         hasMore: true,
         error: null,
-        filtersVisible: false
       });
 
       if (category.type === 'record') {
@@ -512,55 +467,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
         get().fetchInitialData();
       }
     }
-  },
-
-  setAggFilters: async (partial: Partial<AggFilters>) => {
-    const cat = get().selectedCategory;
-    if (!cat.cmsType) return; // 非 CMS 分类不生效，不静默改豆瓣分类
-    const merged: AggFilters = { ...(cat.filters || EMPTY_AGG_FILTERS), ...partial };
-    if (JSON.stringify(merged) === JSON.stringify(cat.filters || EMPTY_AGG_FILTERS)) return;
-    // CMS 与豆瓣 tag 互斥：选筛选即把 tag 置空，避免 tag + 筛选双重过滤。
-    // 加载唯一入口就是这里的 fetchInitialData（index.tsx 对 CMS 模式不走 effect 重复加载）。
-    // 1.4.1：选筛选不改 filtersVisible——展开状态保持不变，可连选多组。
-    set({
-      selectedCategory: { ...cat, filters: merged, tag: undefined, cmsFallback: false },
-      contentData: [],
-      pageStart: 0,
-      aggPage: 0,
-      hasMore: true,
-      error: null,
-      loading: true,
-    });
-    await get().fetchInitialData();
-  },
-
-  clearAggFilters: async () => {
-    const cat = get().selectedCategory;
-    if (!cat.cmsType) return;
-    if (JSON.stringify(cat.filters || EMPTY_AGG_FILTERS) === JSON.stringify(EMPTY_AGG_FILTERS)) return;
-    set({
-      selectedCategory: { ...cat, filters: { ...EMPTY_AGG_FILTERS }, tag: undefined, cmsFallback: false },
-      contentData: [],
-      pageStart: 0,
-      aggPage: 0,
-      hasMore: true,
-      error: null,
-      loading: true,
-    });
-    await get().fetchInitialData();
-  },
-
-  // 1.4.1 筛选栏开关：只改 filtersVisible，不触发任何加载、不改筛选值、
-  // 不改缓存、不改分页。展开/收起后焦点不由 store 决定（见 index.tsx 注释）：
-  // 开关本身始终挂载，是收起后的焦点落点；筛选值选择、重置均不调用本函数，
-  // 故选完不自动收起。非 CMS 分类下调用亦无害（index.tsx 不渲染开关）。
-  toggleFilters: () => {
-    set((state) => ({ filtersVisible: !state.filtersVisible }));
-  },
-
-  setFiltersVisible: (visible: boolean) => {
-    if (get().filtersVisible === visible) return;
-    set({ filtersVisible: visible });
   },
 
   refreshPlayRecords: async () => {

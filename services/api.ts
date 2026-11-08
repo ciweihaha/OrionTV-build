@@ -14,37 +14,7 @@ export interface DoubanResponse {
   list: DoubanItem[];
 }
 
-// --- OrionTV CMS 分类筛选（直连 agg，不走 MoonTV baseURL / 401 重登）---
-// 筛选字段与 agg 服务端完全一致，直接透传，App 内不做二次筛选过滤。
-export interface AggFilters {
-  cate: string;
-  area: string;
-  year: string;
-  lang: string;
-  score: string;
-  order: string;
-}
-
-export const EMPTY_AGG_FILTERS: AggFilters = {
-  cate: "",
-  area: "",
-  year: "",
-  lang: "",
-  score: "",
-  order: "",
-};
-
-export interface AggFilterOption {
-  n: string;
-  v: string;
-}
-
-export interface AggFilterGroup {
-  key: "cate" | "area" | "year" | "lang" | "score" | "order";
-  name: string;
-  value: AggFilterOption[];
-}
-
+// --- OrionTV CMS 分类（直连 agg，不走 MoonTV baseURL / 401 重登）---
 export interface AggVideoItem {
   vod_id: string;
   vod_name: string;
@@ -67,10 +37,9 @@ export interface AggCategoryResponse {
   total: number;
   list: AggVideoItem[];
   class?: Array<{ type_id: number; type_name: string }>;
-  filters?: AggFilterGroup[];
 }
 
-// agg 地址固定，不放进用户可改的设置项，避免误改后筛选全挂。
+// agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
 const AGG_BASE_URL = "https://ysp.ciweihaha.win/agg";
 
 export interface VideoDetail {
@@ -547,22 +516,31 @@ export class API {
     return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "searchhistory");
   }
 
-  getImageProxyUrl(imageUrl: string): string {
+  /**
+   * 图片加载地址：返回 expo-image 可直接用的 source（含必要的请求头）。
+   *
+   * 豆瓣图床（img*.doubanio.com）有防盗链：不带 Referer 直接请求会被 418
+   * 拒绝（curl 实测：无 Referer → 418，有 `Referer: https://movie.douban.com/`
+   * → 200）。因此豆瓣图直连 + 带豆瓣 Referer，不再走 MoonTV 的
+   * /api/image-proxy——后者依赖用户服务端实现，且 expo-image 的原生图片
+   * 加载不一定携带登录态，失败就整片空白。其它图床（CMS 海报等）本身
+   * 允许直连，原样返回，不加请求头。
+   * images.weserv.nl 也测过：对 doubanio 同样返回 404，不可用。
+   */
+  getImageSource(imageUrl: string): { uri: string; headers?: Record<string, string> } {
     if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.trim()) {
-      return "";
+      return { uri: "" };
     }
-    // 1.4.2: only Douban posters go through the MoonTV image proxy, all others load direct.
-    // MoonTV image proxy has a host allowlist and blocks agg poster hosts (e.g. p.lztutu.com) with 403, causing blank posters in 1.4.0/1.4.1. CMS image hosts allow direct hotlink. Douban posters still need the proxy for anti-hotlink.
     let hostname = "";
     try {
       hostname = new URL(imageUrl).hostname.toLowerCase();
     } catch {
-      return imageUrl;
+      return { uri: imageUrl };
     }
     if (hostname.endsWith(".doubanio.com")) {
-      return `${this.baseURL}/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+      return { uri: imageUrl, headers: { Referer: "https://movie.douban.com/" } };
     }
-    return imageUrl;
+    return { uri: imageUrl };
   }
 
   async getDoubanData(
@@ -591,15 +569,8 @@ export class API {
   async getAggCategory(
     t: 1 | 2 | 3 | 4,
     pg: number,
-    filters: AggFilters,
   ): Promise<AggCategoryResponse> {
-    // 不用 URLSearchParams（RN/Hermes 环境兼容性不如 encodeURIComponent 稳妥），
-    // 逐个 encodeURIComponent 拼接；空值省略，缓存 key 的归一化同样按空值处理（见 homeStore.getCacheKey），两者一致。
     const parts = [`ac=videolist`, `t=${t}`, `pg=${pg}`];
-    (["cate", "area", "year", "lang", "score", "order"] as const).forEach((key) => {
-      const value = filters[key];
-      if (value) parts.push(`${key}=${encodeURIComponent(value)}`);
-    });
     const url = `${AGG_BASE_URL}?${parts.join("&")}`;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
