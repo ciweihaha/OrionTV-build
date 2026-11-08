@@ -176,8 +176,9 @@ export default function SearchScreen() {
     showRemoteModal('search');
   };
 
-  const renderItem = ({ item }: { item: SearchResult; index: number }) => (
+  const renderItem = ({ item, ref }: { item: SearchResult; index: number; ref?: React.Ref<any> }) => (
     <VideoCard
+      ref={ref}
       id={item.id.toString()}
       source={item.source}
       title={item.title}
