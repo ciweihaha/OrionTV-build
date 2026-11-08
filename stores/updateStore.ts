@@ -6,6 +6,10 @@ import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('UpdateStore');
 
+// 安装进行中标志：遥控器连按两下“安装”会调两次 installApk，
+// 系统安装器会被重复拉起；这里挡一道（store 字段就不加了，UI 不需要读它）
+let installInFlight = false;
+
 interface UpdateState {
   // 状态
   updateAvailable: boolean;
@@ -147,21 +151,25 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   // 安装更新
   installUpdate: async () => {
     const { downloadedPath } = get();
-    
+
     if (!downloadedPath) {
       set({ error: '安装文件不存在' });
       return;
     }
 
+    if (installInFlight) return;
+    installInFlight = true;
     try {
       await updateService.installApk(downloadedPath);
       // 安装开始后，关闭弹窗
       set({ showUpdateModal: false });
     } catch (error) {
       logger.error('安装失败:', error);
-      set({ 
+      set({
         error: error instanceof Error ? error.message : '安装失败',
       });
+    } finally {
+      installInFlight = false;
     }
   },
 
