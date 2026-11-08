@@ -58,6 +58,15 @@ export const useTVRemoteHandler = () => {
     };
   }, []);
 
+  // 集 modal 打开时若正在长按快进，把 interval 停掉：正常流程松键时会清掉，
+  // 但松键事件一旦丢失，interval 会一直每 200ms 快进下去
+  useEffect(() => {
+    if (showEpisodeModal && fastForwardIntervalRef.current) {
+      clearInterval(fastForwardIntervalRef.current);
+      fastForwardIntervalRef.current = null;
+    }
+  }, [showEpisodeModal]);
+
   // 处理遥控器事件
   const handleTVEvent = useCallback(
     (event: TVRemoteEvent) => {
