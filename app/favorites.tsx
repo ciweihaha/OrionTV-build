@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
+import React, { useCallback } from "react";
 import { View, StyleSheet } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import useFavoritesStore from "@/stores/favoritesStore";
@@ -20,12 +21,19 @@ export default function FavoritesScreen() {
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
 
-  useEffect(() => {
-    fetchFavorites();
-  }, [fetchFavorites]);
+  // 每次回到收藏页都刷新：在详情页取消收藏后返回，列表否则还留着已取消的那条
+  //（普通 useEffect 只在挂载时跑一次，返回时页面还在栈里不会重跑）
+  useFocusEffect(
+    useCallback(() => {
+      fetchFavorites();
+    }, [fetchFavorites])
+  );
 
   const renderItem = ({ item, ref }: { item: Favorite & { key: string }; index: number; ref?: React.Ref<any> }) => {
-    const [source, id] = item.key.split("+");
+    // key 是 `${source}+${id}`：按最后一个 + 切，id 里万一带 + 也不至于截断
+    const sep = item.key.lastIndexOf("+");
+    const source = sep >= 0 ? item.key.slice(0, sep) : item.key;
+    const id = sep >= 0 ? item.key.slice(sep + 1) : "";
     return (
       <VideoCard
         ref={ref}
