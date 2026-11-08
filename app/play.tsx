@@ -98,28 +98,30 @@ export default function PlayScreen() {
     ? undefined
     : rawPosition;
 
-  const { detail } = useDetailStore();
+  const detail = useDetailStore((s) => s.detail);
   const source = sourceStr || detail?.source;
   const id = videoId || detail?.id.toString();
   const title = videoTitle || detail?.title;
-  const {
-    isLoading,
-    showControls,
-    showNextEpisodeOverlay,
-    episodes,
-    currentEpisodeIndex,
-    initialPosition,
-    introEndTime,
-    playbackRate,
-    setVideoPlayer,
-    handlePlaybackStatusUpdate,
-    setShowControls,
-    playEpisode,
-    dismissNextEpisodeOverlay,
-    reset,
-    loadVideo,
-  } = usePlayerStore();
-  const { autoSkipIntro, backgroundPlayback } = useSettingsStore();
+  // 按字段订阅：timeUpdate 每 0.5s 写一次 status/progressPosition，
+  // 整库订阅会让整个播放页每 0.5s 重渲染一次（VideoView、浮层都跟着跑）。
+  // 播放页本身不用 status/progressPosition（进度条在 SeekingBar 里），只订阅用到的字段。
+  const isLoading = usePlayerStore((s) => s.isLoading);
+  const showControls = usePlayerStore((s) => s.showControls);
+  const showNextEpisodeOverlay = usePlayerStore((s) => s.showNextEpisodeOverlay);
+  const episodes = usePlayerStore((s) => s.episodes);
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const initialPosition = usePlayerStore((s) => s.initialPosition);
+  const introEndTime = usePlayerStore((s) => s.introEndTime);
+  const playbackRate = usePlayerStore((s) => s.playbackRate);
+  const setVideoPlayer = usePlayerStore((s) => s.setVideoPlayer);
+  const handlePlaybackStatusUpdate = usePlayerStore((s) => s.handlePlaybackStatusUpdate);
+  const setShowControls = usePlayerStore((s) => s.setShowControls);
+  const playEpisode = usePlayerStore((s) => s.playEpisode);
+  const dismissNextEpisodeOverlay = usePlayerStore((s) => s.dismissNextEpisodeOverlay);
+  const reset = usePlayerStore((s) => s.reset);
+  const loadVideo = usePlayerStore((s) => s.loadVideo);
+  const autoSkipIntro = useSettingsStore((s) => s.autoSkipIntro);
+  const backgroundPlayback = useSettingsStore((s) => s.backgroundPlayback);
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
   // expo-video player: source changes auto-replace; setup sets the
