@@ -438,7 +438,9 @@ export class M3uCacheManager {
       if (utf8ByteLength(data) > MAX_M3U_CACHE_BYTES) return null;
       const entry = JSON.parse(data) as M3uCacheEntry;
       if (!entry || !Array.isArray(entry.channels)) return null;
-      if (Date.now() - entry.ts > M3U_CACHE_TTL_MS) return null; // 过期视为未命中
+      // ts 缺失/非数字时当作过期：否则 NaN 比较永远为 false，
+      // 一条损坏的缓存会当成永不过期的新鲜缓存
+      if (typeof entry.ts !== "number" || Date.now() - entry.ts > M3U_CACHE_TTL_MS) return null; // 过期视为未命中
       return entry;
     } catch (error) {
       logger.info("Failed to get m3u cache:", error);
