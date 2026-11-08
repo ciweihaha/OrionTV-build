@@ -618,10 +618,10 @@ export class API {
     throw lastError ?? new Error("AGG_REQUEST_FAILED");
   }
 
-  async searchVideos(query: string): Promise<{ results: SearchResult[] }> {
+  async searchVideos(query: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
     const url = `/api/search?q=${encodeURIComponent(query)}`;
-    const response = await this._fetch(url, {}, API.SEARCH_TIMEOUT);
-    return this.readJsonLimited(response, API.SEARCH_TIMEOUT, undefined, "search");
+    const response = await this._fetch(url, { signal }, API.SEARCH_TIMEOUT);
+    return this.readJsonLimited(response, API.SEARCH_TIMEOUT, signal, "search");
   }
 
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
