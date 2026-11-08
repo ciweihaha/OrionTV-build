@@ -58,7 +58,7 @@ export const RemoteInputSection: React.FC<RemoteInputSectionProps> = ({ onChange
 
   return (
     <SettingsSection focusable onFocus={handleSectionFocus} onBlur={handleSectionBlur}
-      {...Platform.isTV || deviceType !== 'tv' ? undefined : { onPress: handlePress }}
+      {...deviceType === 'tv' ? undefined : { onPress: handlePress }}
     >
       <Pressable style={styles.settingItem} onFocus={handleSectionFocus} onBlur={handleSectionBlur}>
         <View style={styles.settingInfo}>
