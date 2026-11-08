@@ -64,6 +64,11 @@ class UpdateService {
           // 超时须覆盖到响应体读完，且计时器在所有路径（含 fetch 抛错）都清理
           const remotePackage = await response.json();
           const remoteVersion = remotePackage.version as string;
+          // 校验版本号：服务端返回异常内容（如错误页）时不能拿着 undefined 去拼下载地址，
+          // 否则下载阶段才报一个看不懂的错
+          if (!remoteVersion || typeof remoteVersion !== "string") {
+            throw new Error("Invalid version info from server");
+          }
           return {
             version: remoteVersion,
             downloadUrl: UPDATE_CONFIG.getDownloadUrl(remoteVersion),
