@@ -78,7 +78,7 @@ export default function LiveScreen() {
 
   // 收藏频道加载（V1.5）
   useEffect(() => {
-    LiveChannelPrefsManager.getFavChannels().then(setFavChannels);
+    LiveChannelPrefsManager.getFavChannels().then(setFavChannels).catch(() => {});
   }, []);
 
   const showChannelTitle = (title: string) => {
@@ -186,8 +186,9 @@ export default function LiveScreen() {
 
   // 收藏变化 → 重建分组（收藏虚拟组置顶）
   useEffect(() => {
-    setGroupedChannels(buildGroups(channels, favChannels));
-    setChannelGroups(Object.keys(buildGroups(channels, favChannels)));
+    const groups = buildGroups(channels, favChannels);
+    setGroupedChannels(groups);
+    setChannelGroups(Object.keys(groups));
   }, [channels, favChannels, buildGroups]);
 
   // m3u 加载（V1.5：缓存秒进 + 后台刷新 + 恢复上次频道）
@@ -251,9 +252,14 @@ export default function LiveScreen() {
       showChannelTitle("连续切换失败，请按左右键手动换台");
       return;
     }
+    // 频道列表打开时不自动跳台（用户正在浏览），只提示
+    if (isChannelListVisible) {
+      showChannelTitle("信号异常，请重新选择频道");
+      return;
+    }
     showChannelTitle("信号异常，自动切换下一频道…");
     changeChannel("next");
-  }, [changeChannel]);
+  }, [changeChannel, isChannelListVisible]);
 
   const handlePlaybackStatus = useCallback((status: { isLoaded?: boolean; isPlaying?: boolean }) => {
     if (status.isLoaded && status.isPlaying) {
