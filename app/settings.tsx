@@ -183,7 +183,6 @@ export default function SettingsScreen() {
   const dynamicStyles = createResponsiveStyles(deviceType, spacing, insets);
 
   const renderSettingsContent = () => (
-    // <KeyboardAvoidingView style={{ flex: 1, backgroundColor }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
     <KeyboardAwareScrollView
       enableOnAndroid={true}
       extraScrollHeight={20}
@@ -200,20 +199,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* <View style={dynamicStyles.scrollView}>
-          <FlatList
-            data={sections}
-            renderItem={({ item }) => {
-              if (item) {
-                return item.component;
-              }
-              return null;
-            }}
-            keyExtractor={(item) => (item ? item.key : "default")}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={dynamicStyles.listContent}
-          />
-        </View> */}
         <View style={dynamicStyles.scrollView}>
           {sections.map(item => (
             // 必须把 key 放在最外层的 View 上
@@ -225,6 +210,7 @@ export default function SettingsScreen() {
 
         <View style={dynamicStyles.footer}>
           <StyledButton
+            ref={saveButtonRef}
             text={isLoading ? "保存中..." : "保存设置"}
             onPress={handleSave}
             variant="primary"
@@ -234,7 +220,6 @@ export default function SettingsScreen() {
         </View>
       </ThemedView>
     </KeyboardAwareScrollView>
-    // </KeyboardAvoidingView>
   );
 
   // 根据设备类型决定是否包装在响应式导航中
