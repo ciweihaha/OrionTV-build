@@ -24,7 +24,19 @@ const parseM3U = (m3uText: string): Channel[] => {
     const trimmedLine = line.trim();
     if (trimmedLine.startsWith('#EXTINF:')) {
       currentChannelInfo = {}; // Start a new channel
-      const commaIndex = trimmedLine.lastIndexOf(',');
+      // 台名前的逗号：属性值里可能有逗号（group-title="A,B"），台名里也可能有
+      // （"CCTV-1,高清"）——取第一个不在双引号内的逗号；原来用 lastIndexOf，
+      // 台名带逗号时会被截成后半截
+      let commaIndex = -1;
+      let inQuotes = false;
+      for (let i = 8; i < trimmedLine.length; i++) {
+        const ch = trimmedLine[i];
+        if (ch === '"') inQuotes = !inQuotes;
+        else if (ch === ',' && !inQuotes) {
+          commaIndex = i;
+          break;
+        }
+      }
       if (commaIndex !== -1) {
         currentChannelInfo.name = trimmedLine.substring(commaIndex + 1).trim();
         const attributesPart = trimmedLine.substring(8, commaIndex);
@@ -37,7 +49,8 @@ const parseM3U = (m3uText: string): Channel[] => {
           currentChannelInfo.group = groupMatch[1];
         }
       } else {
-        currentChannelInfo.name = trimmedLine.substring(8).trim();
+        // 没有分隔逗号：后面那段是时长/属性不是台名，留空走 'Unknown' 兜底
+        currentChannelInfo.name = '';
       }
     } else if (currentChannelInfo && trimmedLine && !trimmedLine.startsWith('#') && trimmedLine.includes('://')) {
       currentChannelInfo.url = trimmedLine;
