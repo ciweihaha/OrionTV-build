@@ -36,17 +36,22 @@ export const useApiConfig = () => {
       return;
     }
 
+    // 校验序号：apiBaseUrl 连续变化时会起多个并行的 getServerConfig，
+    // 慢的旧请求不能覆盖新请求的校验结果；组件卸载/依赖变化时丢弃旧结果
+    let cancelled = false;
     const validateConfig = async () => {
       setValidationState(prev => ({ ...prev, isValidating: true, error: null }));
 
       try {
         await api.getServerConfig();
+        if (cancelled) return;
         setValidationState({
           isValidating: false,
           isValid: true,
           error: null,
         });
       } catch (error) {
+        if (cancelled) return;
         let errorMessage = '服务器连接失败';
 
         if (error instanceof Error) {
@@ -83,6 +88,9 @@ export const useApiConfig = () => {
     if (!isLoadingServerConfig) {
       validateConfig();
     }
+    return () => {
+      cancelled = true;
+    };
   }, [apiBaseUrl, isConfigured, isLoadingServerConfig]);
 
   // Reset validation when server config loading state changes
