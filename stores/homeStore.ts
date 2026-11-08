@@ -446,7 +446,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
       if (activeLoadCategory === loadCategory) {
         activeLoadCategory = null;
       }
-      set({ loading: false, loadingMore: false });
+      // 分类已变：旧请求的 finally 不能清新分类的 loading/loadingMore，
+      // 否则新分类还在加载，首页会先闪一下“暂无内容”
+      if (!isStale()) {
+        set({ loading: false, loadingMore: false });
+      }
     }
   },
 
