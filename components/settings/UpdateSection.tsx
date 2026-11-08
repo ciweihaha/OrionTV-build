@@ -4,7 +4,7 @@ import { ThemedText } from "../ThemedText";
 import { StyledButton } from "../StyledButton";
 import { useUpdateStore } from "@/stores/updateStore";
 
-export function UpdateSection() {
+export function UpdateSection({ onFocus }: { onFocus?: () => void }) {
   const { 
     currentVersion, 
     remoteVersion, 
@@ -65,7 +65,7 @@ export function UpdateSection() {
       )}
 
       <View style={styles.buttonContainer}>
-        <StyledButton onPress={handleCheckUpdate} disabled={checking || downloading} style={styles.button}>
+        <StyledButton onPress={handleCheckUpdate} onFocus={onFocus} disabled={checking || downloading} style={styles.button}>
           {checking ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
