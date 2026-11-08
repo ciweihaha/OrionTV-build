@@ -84,7 +84,24 @@ export default function SearchScreen() {
             setError("没有找到相关内容");
           }
         } catch (err) {
-          setError("搜索失败，请稍后重试。");
+          // 把真实原因显示出来，不再统一吞成一句话：超时、未配服务器、登录过期、
+          // 服务端报错各有各的提示，方便定位是应用问题还是服务器问题。
+          const msg = err instanceof Error ? err.message : "";
+          if (msg.includes("API_URL_NOT_SET")) {
+            setError("未配置服务器地址，请先在设置里填写服务器");
+          } else if (msg.includes("BODY_TIMEOUT_BREAKER_OPEN")) {
+            setError("搜索连续超时，60 秒后再试");
+          } else if (msg.includes("REQUEST_TIMEOUT") || msg.includes("RESPONSE_TIMEOUT")) {
+            setError("搜索超时，服务器响应太慢，请稍后重试");
+          } else if (msg.includes("UNAUTHORIZED")) {
+            setError("登录已过期，请重新登录");
+          } else if (msg.includes("RESPONSE_TOO_LARGE")) {
+            setError("搜索结果太多，请换个更具体的关键词");
+          } else if (msg.includes("HTTP error! status:")) {
+            setError("服务器报错，请稍后重试");
+          } else {
+            setError("搜索失败，请稍后重试。");
+          }
           logger.info("Search failed:", err);
         } finally {
           setLoading(false);

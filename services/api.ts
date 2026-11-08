@@ -113,6 +113,10 @@ export class API {
   // 默认请求超时（毫秒）
   private static readonly DEFAULT_TIMEOUT = 15000;
 
+  // 搜索是扇出到多个源聚合，服务端耗时远高于普通接口，单独放宽到 60 秒，
+  // 否则源多时 15 秒就超时、连续 3 次还触发熔断。只放宽搜索，不动其它接口。
+  private static readonly SEARCH_TIMEOUT = 60_000;
+
   // API JSON 响应最大体积：接口返回均为小对象/列表，2MB 已足够（做法参照 services/m3u.ts 的体积限制）
   private static readonly MAX_JSON_BYTES = 2 * 1024 * 1024;
 
@@ -616,8 +620,8 @@ export class API {
 
   async searchVideos(query: string): Promise<{ results: SearchResult[] }> {
     const url = `/api/search?q=${encodeURIComponent(query)}`;
-    const response = await this._fetch(url);
-    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "search");
+    const response = await this._fetch(url, {}, API.SEARCH_TIMEOUT);
+    return this.readJsonLimited(response, API.SEARCH_TIMEOUT, undefined, "search");
   }
 
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
