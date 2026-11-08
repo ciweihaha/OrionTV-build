@@ -453,9 +453,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     const detail = useDetailStore.getState().detail;
     const { autoSkipIntro, nextEpisodeOverlayEnabled } = useSettingsStore.getState();
 
+    // 片头/片尾标记是按剧保存的（不是按集）：同一部剧里有短集时，
+    // 标记可能超过本集片长——片尾剩余时间大于片长时，阈值是负数，
+    // 第一帧就触发自动切集，短集根本播不了；片头同理会跳到片长之外。
+    // 标记只在本集片长内有效，超出的当作本集没有标记
     if (
       outroStartTime &&
       newStatus.durationMillis &&
+      outroStartTime < newStatus.durationMillis &&
       newStatus.positionMillis >= newStatus.durationMillis - outroStartTime
     ) {
       if (currentEpisodeIndex < episodes.length - 1) {
@@ -469,6 +474,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       autoSkipIntro &&
       introEndTime &&
       introEndTime > 0 &&
+      newStatus.durationMillis &&
+      introEndTime < newStatus.durationMillis &&
       newStatus.isPlaying &&
       newStatus.positionMillis < introEndTime &&
       !introSkipped
