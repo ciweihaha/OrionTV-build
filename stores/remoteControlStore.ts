@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { remoteControlService } from '@/services/remoteControlService';
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('RemoteControlStore');
 
