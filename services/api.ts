@@ -314,6 +314,9 @@ export class API {
     if (utf8ByteLength(text) > API.MAX_JSON_BYTES) {
       throw new Error(`RESPONSE_TOO_LARGE: body exceeded ${API.MAX_JSON_BYTES} bytes`);
     }
+    // 空响应体（比如 DELETE 返回 204）直接返回 null：JSON.parse("") 会抛
+    // SyntaxError，调用方会以为删除失败——实际上服务端已经删掉了
+    if (!text.trim()) return null;
     return JSON.parse(text);
   }
 
