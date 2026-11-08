@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { View, Switch, StyleSheet, Pressable, Animated, Platform, TouchableOpacity , useTVEventHandler } from "react-native";
+import { View, Switch, StyleSheet, Animated, Platform, TouchableOpacity , useTVEventHandler } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -60,7 +60,7 @@ export const RemoteInputSection: React.FC<RemoteInputSectionProps> = ({ onChange
     <SettingsSection focusable onFocus={handleSectionFocus} onBlur={handleSectionBlur}
       {...deviceType === 'tv' ? undefined : { onPress: handlePress }}
     >
-      <Pressable style={styles.settingItem} onFocus={handleSectionFocus} onBlur={handleSectionBlur}>
+      <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <ThemedText style={styles.settingName}>启用远程输入</ThemedText>
         </View>
@@ -84,7 +84,7 @@ export const RemoteInputSection: React.FC<RemoteInputSectionProps> = ({ onChange
           )
           }
         </Animated.View>
-      </Pressable>
+      </View>
 
       {remoteInputEnabled && (
         <View style={styles.statusContainer}>
