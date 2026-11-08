@@ -33,7 +33,7 @@ function isSectionItem(
 }
 
 export default function SettingsScreen() {
-  const { loadSettings, saveSettings, setApiBaseUrl, setM3uUrl } = useSettingsStore();
+  const { loadSettings, saveSettings } = useSettingsStore();
   const { lastMessage, lastMessageAt, targetPage, clearMessage } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
@@ -58,12 +58,14 @@ export default function SettingsScreen() {
 
   const handleRemoteInput = (message: string) => {
     // Handle remote input based on currently focused section
+    // 走 section 的 setInputValue（而不是直接调 store）：远程输入是整串替换，
+    // 只有这条路会把光标同步移到末尾，否则之后在电视上打字会插到文本中间
     if (currentSection === "api" && apiSectionRef.current) {
       // API Config Section
-      setApiBaseUrl(message);
+      apiSectionRef.current.setInputValue(message);
     } else if (currentSection === "livestream" && liveStreamSectionRef.current) {
       // Live Stream Section
-      setM3uUrl(message);
+      liveStreamSectionRef.current.setInputValue(message);
     }
   };
 
