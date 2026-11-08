@@ -9,13 +9,7 @@ interface VideoLoadingAnimationProps {
 const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgressBar = true }) => {
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0)).current;
-  const bounceAnims = [
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
-    useRef(new Animated.Value(0)).current,
-  ];
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const gradientAnim = useRef(new Animated.Value(0)).current;
   const textFadeAnim = useRef(new Animated.Value(0)).current;
   const shapeAnims = [
     useRef(new Animated.Value(0)).current,
@@ -59,40 +53,11 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       ])
     );
 
-    const bounceAnimations = bounceAnims.map((anim, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 160),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 700,
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.ease),
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 700,
-            useNativeDriver: true,
-            easing: Easing.inOut(Easing.ease),
-          }),
-        ])
-      )
-    );
-
     const progressAnimation = Animated.loop(
       Animated.timing(progressAnim, {
         toValue: 1,
         duration: 4000,
         useNativeDriver: false, // width animation not supported by native driver
-        easing: Easing.inOut(Easing.ease),
-      })
-    );
-
-    const gradientAnimation = Animated.loop(
-      Animated.timing(gradientAnim, {
-        toValue: 1,
-        duration: 2000,
-        useNativeDriver: false, // gradient animation not supported by native driver
         easing: Easing.inOut(Easing.ease),
       })
     );
@@ -128,15 +93,18 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       )
     );
 
-    Animated.parallel([
+    const parallel = Animated.parallel([
       floatAnimation,
       pulseAnimation,
-      ...bounceAnimations,
       progressAnimation,
-      gradientAnimation,
       textFadeAnimation,
       ...shapeAnimations,
-    ]).start();
+    ]);
+    parallel.start();
+    // 卸载时停掉所有循环动画：不然 Animated.loop 会一直跑，JS 驱动的那两条
+    // （进度条宽度）会在加载页消失后还每帧占 JS 线程；每次出现又新起一套，
+    // 用久了越积越多
+    return () => parallel.stop();
     // Animated values are stable refs created once on mount; the effect
     // intentionally runs only once, so the dep array stays empty.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,10 +124,6 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
         },
       ],
     },
-    bounce: bounceAnims.map((anim) => ({
-      transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.2] }) }],
-      opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }),
-    })),
     progress: {
       width: progressAnim.interpolate({
         inputRange: [0, 0.7, 1],
@@ -201,12 +165,6 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
             <Animated.View style={[styles.playButton, animatedStyles.pulse]} />
           </View>
         </Animated.View>
-
-        {/* <View style={styles.loadingDots}>
-          <Animated.View style={[styles.dot, animatedStyles.bounce[0]]} />
-          <Animated.View style={[styles.dot, animatedStyles.bounce[1]]} />
-          <Animated.View style={[styles.dot, animatedStyles.bounce[2]]} />
-        </View> */}
 
         {showProgressBar && (
           <View style={styles.progressBar}>
@@ -263,18 +221,6 @@ const styles = StyleSheet.create({
     borderTopColor: "transparent",
     borderBottomWidth: 15,
     borderBottomColor: "transparent",
-  },
-  loadingDots: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 20,
-  },
-  dot: {
-    width: 12,
-    height: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 6,
   },
   progressBar: {
     width: 300,
