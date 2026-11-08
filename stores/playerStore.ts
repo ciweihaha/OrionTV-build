@@ -134,14 +134,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     
     let detail = useDetailStore.getState().detail;
     let episodes: string[] = [];
-    
-    // 如果有detail，使用detail的source获取episodes；否则使用传入的source
-    if (detail && detail.source) {
-      logger.info(`[INFO] Using existing detail source "${detail.source}" to get episodes`);
+
+    // 传入的 source 是用户当前点的源，优先用它拿 episodes；缓存的 detail
+    // 可能是上一个视频的同名残留，只在传入源拿不到时才回退到它——
+    // 原来反过来优先用缓存 detail 的源，同名视频切源时会播错源的剧集
+    episodes = episodesSelectorBySource(source)(useDetailStore.getState());
+    if ((!episodes || episodes.length === 0) && detail?.source && detail.source !== source) {
       episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
-    } else {
-      logger.info(`[INFO] No existing detail, using provided source "${source}" to get episodes`);
-      episodes = episodesSelectorBySource(source)(useDetailStore.getState());
     }
 
     set({
@@ -212,18 +211,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       
       logger.info(`[SUCCESS] Detail and episodes loaded - source: ${detail.source_name}, episodes: ${episodes.length}`);
     } else {
+      // 缓存的详情：episodes 上面已经按传入源优先取过，这里不再用缓存
+      // detail 的源覆盖（那就是同名切源播错源的 bug）
       logger.info(`[PERF] Skipping DetailStore.init - using cached data`);
-      
-      // 即使是缓存的数据，也要确保使用正确的source获取episodes
-      if (detail && detail.source && detail.source !== source) {
-        logger.info(`[INFO] Cached detail source "${detail.source}" differs from provided source "${source}", updating episodes`);
-        episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
-        
-        if (!episodes || episodes.length === 0) {
-          logger.warn(`[WARN] Cached detail source "${detail.source}" has no episodes, trying provided source "${source}"`);
-          episodes = episodesSelectorBySource(source)(useDetailStore.getState());
-        }
-      }
     }
 
     // 最终验证：确保我们有有效的detail和episodes数据
