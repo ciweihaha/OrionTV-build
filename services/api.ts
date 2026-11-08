@@ -36,7 +36,7 @@ export interface AggCategoryResponse {
   limit: number;
   total: number;
   list: AggVideoItem[];
-  class?: Array<{ type_id: number; type_name: string }>;
+  class?: { type_id: number; type_name: string }[];
 }
 
 // agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
