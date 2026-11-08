@@ -79,7 +79,11 @@ export const useTVRemoteHandler = () => {
   // 处理遥控器事件
   const handleTVEvent = useCallback(
     (event: TVRemoteEvent) => {
-      if (showEpisodeModal) {
+      // 任一弹窗打开时不处理方向/快进：否则在选源/倍速弹窗里按左右，
+      // 焦点在弹窗里移动的同时视频也在快进（选集弹窗第 5 轮已守，
+      // 选源/倍速弹窗同理——控制条 5 秒自动隐藏后 showControls 为 false，
+      // 只靠下面的 showControls 判断是拦不住的）
+      if (showEpisodeModal || showSourceModal || showSpeedModal) {
         return;
       }
 
@@ -131,7 +135,7 @@ export const useTVRemoteHandler = () => {
           break;
       }
     },
-    [showControls, showEpisodeModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
   );
 
   useTVEventHandler(handleTVEvent);
