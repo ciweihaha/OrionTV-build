@@ -420,6 +420,18 @@ class UpdateService {
    *  4️⃣ 安装 APK（只在 Android 可用，使用 expo-intent-launcher）
    * --------------------------------------------------------------- */
   async installApk(fileUri: string): Promise<void> {
+    // 平台检查放最前面：iOS 上 getContentUriAsync 本来就会失败，
+    // 先拦下来才能给用户看“iOS 无法安装 APK”的明确提示，而不是
+    // 一条看不懂的底层错误
+    if (Platform.OS !== 'android') {
+      Toast.show({
+        type: 'error',
+        text1: '安装失败',
+        text2: 'iOS 设备无法直接安装 APK',
+      });
+      throw new Error('APK install not supported on iOS');
+    }
+
     // ① 先确认文件存在
     const file = new File(fileUri);
     if (!file.exists) {
@@ -429,50 +441,40 @@ class UpdateService {
     // ② 把 file:// 转成 content://，Expo‑FileSystem 已经实现了 FileProvider
     const contentUri = await getContentUriAsync(fileUri);
 
-    // ③ 只在 Android 里执行
-    if (Platform.OS === 'android') {
-      try {
-        // FLAG_ACTIVITY_NEW_TASK = 0x10000000 (1)
-        // FLAG_GRANT_READ_URI_PERMISSION = 0x00000010
-        const flags = 1 | 0x00000010;   // 1 | 16
+    // ③ 拉起系统安装器
+    try {
+      // FLAG_ACTIVITY_NEW_TASK = 0x10000000 (1)
+      // FLAG_GRANT_READ_URI_PERMISSION = 0x00000010
+      const flags = 1 | 0x00000010;   // 1 | 16
 
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,          // 必须是 content://
-          type: ANDROID_MIME_TYPE,   // application/vnd.android.package-archive
-          flags,
-        });
-      } catch (e) {
-        // 统一错误提示
-        const errMsg = e instanceof Error ? e.message : String(e);
-        if (errMsg.includes('Activity not found')) {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '系统没有找到可以打开 APK 的应用，请检查系统设置',
-          });
-        } else if (errMsg.includes('permission')) {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '请在设置里允许“未知来源”安装',
-          });
-        } else {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '未知错误，请稍后重试',
-          });
-        }
-        throw e;
-      }
-    } else {
-      // iOS 设备不支持直接安装 APK
-      Toast.show({
-        type: 'error',
-        text1: '安装失败',
-        text2: 'iOS 设备无法直接安装 APK',
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,          // 必须是 content://
+        type: ANDROID_MIME_TYPE,   // application/vnd.android.package-archive
+        flags,
       });
-      throw new Error('APK install not supported on iOS');
+    } catch (e) {
+      // 统一错误提示
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (errMsg.includes('Activity not found')) {
+        Toast.show({
+          type: 'error',
+          text1: '安装失败',
+          text2: '系统没有找到可以打开 APK 的应用，请检查系统设置',
+        });
+      } else if (errMsg.includes('permission')) {
+        Toast.show({
+          type: 'error',
+          text1: '安装失败',
+          text2: '请在设置里允许“未知来源”安装',
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: '安装失败',
+          text2: '未知错误，请稍后重试',
+        });
+      }
+      throw e;
     }
   }
 
