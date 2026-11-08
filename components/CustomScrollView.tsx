@@ -7,7 +7,9 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 
 interface CustomScrollViewProps {
   data: any[];
-  renderItem: ({ item, index }: { item: any; index: number }) => React.ReactNode;
+  // index === 0 的卡片会收到 ref：回到顶部后要把焦点放回第一张卡片；
+  // 调用方把 ref 透传给卡片（VideoCard 是 forwardRef，可直接 focus）
+  renderItem: ({ item, index, ref }: { item: any; index: number; ref?: React.Ref<any> }) => React.ReactNode;
   numColumns?: number; // 如果不提供，将使用响应式默认值
   loading?: boolean;
   loadingMore?: boolean;
@@ -208,7 +210,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
                     return (
                       // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
                       <View key={actualIndex} {...cardProps}>
-                        {renderItem({ item, index: actualIndex })}
+                        {renderItem({ item, index: actualIndex, ref: actualIndex === 0 ? firstCardRef : undefined })}
                       </View>
                     );
                   })}
