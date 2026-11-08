@@ -215,6 +215,33 @@ describe("API.searchVideos 取消", () => {
   });
 });
 
+describe("API.searchVideo 缺 results 字段（第 44 轮）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("服务端返回不含 results 的对象时返回空结果，不抛 TypeError", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { error: "no results" }));
+    const res = await api.searchVideo("蜘蛛侠", "res1");
+    expect(res).toEqual({ results: [] });
+  });
+
+  it("results 为非数组时同样返回空结果", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { results: "oops" }));
+    const res = await api.searchVideo("蜘蛛侠", "res1");
+    expect(res).toEqual({ results: [] });
+  });
+});
+
 describe("API URL 参数编码", () => {
   let fetchMock: jest.Mock;
   let api: API;
