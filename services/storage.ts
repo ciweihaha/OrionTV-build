@@ -61,6 +61,21 @@ export interface LoginCredentials {
 // --- Helper ---
 const generateKey = (source: string, id: string) => `${source}+${id}`;
 
+// 本地写序列化：AsyncStorage 读-改-写不是原子的，并发写会互相覆盖
+// （播放记录节流保存与切集/标记片头同时写时，旧快照会盖掉新位置；
+// 连续点两次收藏时，两次 toggle 可能读到同一个旧快照）。
+// 一条 promise 链把本地写操作排队；链本身不断（任务抛错也不影响后续任务），
+// 但调用方仍能拿到自己任务的抛错。
+let localWriteChain: Promise<void> = Promise.resolve();
+const enqueueLocalWrite = <T>(task: () => Promise<T>): Promise<T> => {
+  const run = localWriteChain.then(task, task);
+  localWriteChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+};
+
 // --- PlayerSettingsManager (Uses AsyncStorage) ---
 /** 播放器个性化设置上限（仅用户自定义过片头/片尾/倍速的条目才会写入） */
 const MAX_PLAYER_SETTINGS = 200;
@@ -90,31 +105,37 @@ export class PlayerSettingsManager {
   }
 
   static async save(source: string, id: string, settings: PlayerSettings): Promise<void> {
-    const allSettings = await this.getAll();
-    const key = generateKey(source, id);
-    // Only save if there are actual values to save
-    if (settings.introEndTime !== undefined || settings.outroStartTime !== undefined || settings.playbackRate !== undefined) {
-      allSettings[key] = { ...allSettings[key], ...settings };
-      // 超限时按插入顺序淘汰最旧条目（字符串 key 保持插入序）
-      const keys = Object.keys(allSettings);
-      if (keys.length > MAX_PLAYER_SETTINGS) {
-        keys.slice(0, keys.length - MAX_PLAYER_SETTINGS).forEach((k) => delete allSettings[k]);
+    return enqueueLocalWrite(async () => {
+      const allSettings = await this.getAll();
+      const key = generateKey(source, id);
+      // Only save if there are actual values to save
+      if (settings.introEndTime !== undefined || settings.outroStartTime !== undefined || settings.playbackRate !== undefined) {
+        allSettings[key] = { ...allSettings[key], ...settings };
+        // 超限时按插入顺序淘汰最旧条目（字符串 key 保持插入序）
+        const keys = Object.keys(allSettings);
+        if (keys.length > MAX_PLAYER_SETTINGS) {
+          keys.slice(0, keys.length - MAX_PLAYER_SETTINGS).forEach((k) => delete allSettings[k]);
+        }
+      } else {
+        // If all are undefined, remove the key
+        delete allSettings[key];
       }
-    } else {
-      // If all are undefined, remove the key
-      delete allSettings[key];
-    }
-    await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
+      await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
+    });
   }
 
   static async remove(source: string, id: string): Promise<void> {
-    const allSettings = await this.getAll();
-    delete allSettings[generateKey(source, id)];
-    await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
+    return enqueueLocalWrite(async () => {
+      const allSettings = await this.getAll();
+      delete allSettings[generateKey(source, id)];
+      await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
+    });
   }
 
   static async clearAll(): Promise<void> {
-    await AsyncStorage.removeItem(STORAGE_KEYS.PLAYER_SETTINGS);
+    return enqueueLocalWrite(async () => {
+      await AsyncStorage.removeItem(STORAGE_KEYS.PLAYER_SETTINGS);
+    });
   }
 }
 
@@ -140,10 +161,11 @@ export class FavoriteManager {
   static async save(source: string, id: string, item: Favorite): Promise<void> {
     const key = generateKey(source, id);
     if (this.getStorageType() === "localstorage") {
-      const allFavorites = await this.getAll();
-      allFavorites[key] = { ...item, save_time: Date.now() };
-      await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
-      return;
+      return enqueueLocalWrite(async () => {
+        const allFavorites = await this.getAll();
+        allFavorites[key] = { ...item, save_time: Date.now() };
+        await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
+      });
     }
     await api.addFavorite(key, item);
   }
@@ -151,10 +173,11 @@ export class FavoriteManager {
   static async remove(source: string, id: string): Promise<void> {
     const key = generateKey(source, id);
     if (this.getStorageType() === "localstorage") {
-      const allFavorites = await this.getAll();
-      delete allFavorites[key];
-      await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
-      return;
+      return enqueueLocalWrite(async () => {
+        const allFavorites = await this.getAll();
+        delete allFavorites[key];
+        await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
+      });
     }
     await api.deleteFavorite(key);
   }
@@ -170,6 +193,23 @@ export class FavoriteManager {
   }
 
   static async toggle(source: string, id: string, item: Favorite): Promise<boolean> {
+    // 整段“查-改”放进同一个写任务：否则连续点两次收藏，两次都会读到同一个旧快照，
+    // 结果是收藏两次还是收藏（应为取消收藏）。
+    // 注意：任务里直接读写，不调本类的 save/remove（它们自己也会进队，会死锁）。
+    if (this.getStorageType() === "localstorage") {
+      return enqueueLocalWrite(async () => {
+        const key = generateKey(source, id);
+        const allFavorites = await this.getAll();
+        if (allFavorites[key]) {
+          delete allFavorites[key];
+          await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
+          return false;
+        }
+        allFavorites[key] = { ...item, save_time: Date.now() };
+        await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(allFavorites));
+        return true;
+      });
+    }
     const isFav = await this.isFavorited(source, id);
     if (isFav) {
       await this.remove(source, id);
@@ -182,8 +222,9 @@ export class FavoriteManager {
 
   static async clearAll(): Promise<void> {
     if (this.getStorageType() === "localstorage") {
-      await AsyncStorage.removeItem(STORAGE_KEYS.FAVORITES);
-      return;
+      return enqueueLocalWrite(async () => {
+        await AsyncStorage.removeItem(STORAGE_KEYS.FAVORITES);
+      });
     }
     await api.deleteFavorite();
   }
@@ -253,18 +294,20 @@ export class PlayRecordManager {
     }
 
     if (this.getStorageType() === "localstorage") {
-      const allRecords = await this.getAll();
-      const fullRecord = { ...apiRecord, save_time: Date.now() };
-      allRecords[key] = { ...allRecords[key], ...fullRecord };
-      // 超限时按 save_time 淘汰最旧的记录
-      const keys = Object.keys(allRecords);
-      if (keys.length > MAX_PLAY_RECORDS) {
-        keys
-          .sort((a, b) => (allRecords[a].save_time || 0) - (allRecords[b].save_time || 0))
-          .slice(0, keys.length - MAX_PLAY_RECORDS)
-          .forEach((k) => delete allRecords[k]);
-      }
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
+      return enqueueLocalWrite(async () => {
+        const allRecords = await this.getAll();
+        const fullRecord = { ...apiRecord, save_time: Date.now() };
+        allRecords[key] = { ...allRecords[key], ...fullRecord };
+        // 超限时按 save_time 淘汰最旧的记录
+        const keys = Object.keys(allRecords);
+        if (keys.length > MAX_PLAY_RECORDS) {
+          keys
+            .sort((a, b) => (allRecords[a].save_time || 0) - (allRecords[b].save_time || 0))
+            .slice(0, keys.length - MAX_PLAY_RECORDS)
+            .forEach((k) => delete allRecords[k]);
+        }
+        await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
+      });
     } else {
       await api.savePlayRecord(key, apiRecord);
     }
@@ -290,9 +333,11 @@ export class PlayRecordManager {
     await PlayerSettingsManager.remove(source, id); // Always remove local settings
 
     if (this.getStorageType() === "localstorage") {
-      const allRecords = await this.getAll();
-      delete allRecords[key];
-      await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
+      return enqueueLocalWrite(async () => {
+        const allRecords = await this.getAll();
+        delete allRecords[key];
+        await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
+      });
     } else {
       await api.deletePlayRecord(key);
     }
@@ -302,7 +347,9 @@ export class PlayRecordManager {
     await PlayerSettingsManager.clearAll(); // Always clear local settings
 
     if (this.getStorageType() === "localstorage") {
-      await AsyncStorage.removeItem(STORAGE_KEYS.PLAY_RECORDS);
+      return enqueueLocalWrite(async () => {
+        await AsyncStorage.removeItem(STORAGE_KEYS.PLAY_RECORDS);
+      });
     } else {
       await api.deletePlayRecord();
     }
@@ -333,18 +380,20 @@ export class SearchHistoryManager {
     if (!trimmed) return;
 
     if (this.getStorageType() === "localstorage") {
-      let history = await this.get();
-      history = [trimmed, ...history.filter((k) => k !== trimmed)].slice(0, 20); // Keep latest 20
-      await AsyncStorage.setItem(STORAGE_KEYS.SEARCH_HISTORY, JSON.stringify(history));
-      return;
+      return enqueueLocalWrite(async () => {
+        let history = await this.get();
+        history = [trimmed, ...history.filter((k) => k !== trimmed)].slice(0, 20); // Keep latest 20
+        await AsyncStorage.setItem(STORAGE_KEYS.SEARCH_HISTORY, JSON.stringify(history));
+      });
     }
     await api.addSearchHistory(trimmed);
   }
 
   static async clear(): Promise<void> {
     if (this.getStorageType() === "localstorage") {
-      await AsyncStorage.removeItem(STORAGE_KEYS.SEARCH_HISTORY);
-      return;
+      return enqueueLocalWrite(async () => {
+        await AsyncStorage.removeItem(STORAGE_KEYS.SEARCH_HISTORY);
+      });
     }
     await api.deleteSearchHistory();
   }
@@ -442,17 +491,20 @@ export class LiveChannelPrefsManager {
   }
 
   static async toggleFavChannel(channel: LiveLastChannel): Promise<boolean> {
-    const favs = await this.getFavChannels();
-    const idx = favs.findIndex((c) => c.url === channel.url);
-    if (idx >= 0) {
-      favs.splice(idx, 1);
+    // 整段“查-改”放进同一个写任务：否则连点两次菜单键，两次都会读到同一个旧列表
+    return enqueueLocalWrite(async () => {
+      const favs = await this.getFavChannels();
+      const idx = favs.findIndex((c) => c.url === channel.url);
+      if (idx >= 0) {
+        favs.splice(idx, 1);
+        await AsyncStorage.setItem(STORAGE_KEYS.LIVE_FAV_CHANNELS, JSON.stringify(favs));
+        return false; // 已取消收藏
+      }
+      favs.unshift({ url: channel.url, name: channel.name });
+      if (favs.length > 100) favs.length = 100;
       await AsyncStorage.setItem(STORAGE_KEYS.LIVE_FAV_CHANNELS, JSON.stringify(favs));
-      return false; // 已取消收藏
-    }
-    favs.unshift({ url: channel.url, name: channel.name });
-    if (favs.length > 100) favs.length = 100;
-    await AsyncStorage.setItem(STORAGE_KEYS.LIVE_FAV_CHANNELS, JSON.stringify(favs));
-    return true; // 已收藏
+      return true; // 已收藏
+    });
   }
 
   static isFavChannels(favs: LiveLastChannel[], url: string): boolean {
@@ -486,9 +538,11 @@ export class SettingsManager {
   }
 
   static async save(settings: Partial<AppSettings>): Promise<void> {
-    const currentSettings = await this.get();
-    const updatedSettings = { ...currentSettings, ...settings };
-    await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updatedSettings));
+    return enqueueLocalWrite(async () => {
+      const currentSettings = await this.get();
+      const updatedSettings = { ...currentSettings, ...settings };
+      await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updatedSettings));
+    });
   }
 
   static async reset(): Promise<void> {
