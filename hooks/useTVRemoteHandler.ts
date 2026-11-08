@@ -18,6 +18,8 @@ export const useTVRemoteHandler = () => {
   const showControls = usePlayerStore((s) => s.showControls);
   const setShowControls = usePlayerStore((s) => s.setShowControls);
   const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
+  const showSourceModal = usePlayerStore((s) => s.showSourceModal);
+  const showSpeedModal = usePlayerStore((s) => s.showSpeedModal);
   const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
   const seek = usePlayerStore((s) => s.seek);
 
@@ -64,14 +66,15 @@ export const useTVRemoteHandler = () => {
     };
   }, []);
 
-  // 集 modal 打开时若正在长按快进，把 interval 停掉：正常流程松键时会清掉，
+  // 任一弹窗打开时若正在长按快进，把 interval 停掉：正常流程松键时会清掉，
   // 但松键事件一旦丢失，interval 会一直每 200ms 快进下去
+  // （第 5 轮只守了选集弹窗，选源/倍速弹窗同理：都是按键打开的）
   useEffect(() => {
-    if (showEpisodeModal && fastForwardIntervalRef.current) {
+    if ((showEpisodeModal || showSourceModal || showSpeedModal) && fastForwardIntervalRef.current) {
       clearInterval(fastForwardIntervalRef.current);
       fastForwardIntervalRef.current = null;
     }
-  }, [showEpisodeModal]);
+  }, [showEpisodeModal, showSourceModal, showSpeedModal]);
 
   // 处理遥控器事件
   const handleTVEvent = useCallback(
