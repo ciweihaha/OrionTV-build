@@ -644,10 +644,10 @@ export class API {
     return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "resources");
   }
 
-  async getVideoDetail(source: string, id: string): Promise<VideoDetail> {
+  async getVideoDetail(source: string, id: string, signal?: AbortSignal): Promise<VideoDetail> {
     const url = `/api/detail?source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}`;
-    const response = await this._fetch(url);
-    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "detail");
+    const response = await this._fetch(url, { signal });
+    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "detail");
   }
 }
 
