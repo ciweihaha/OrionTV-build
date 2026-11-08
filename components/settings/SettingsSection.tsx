@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { StyleSheet, Pressable, Platform } from "react-native";
+import { StyleSheet, Pressable } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors } from "@/constants/Colors";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -37,7 +37,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({ children, onFo
   return (
     <ThemedView style={[styles.section, isFocused && styles.sectionFocused]}>
       <Pressable
-        android_ripple={Platform.isTV||deviceType !=='tv'? {color:'transparent'}:{color:Colors.dark.link}}
+        android_ripple={deviceType === 'tv' ? {color:'transparent'} : {color:Colors.dark.link}}
         style={styles.sectionPressable}
         // {...(Platform.isTV ? {onFocus: handleFocus, onBlur: handleBlur} : {onPress: onPress})}
         onFocus={handleFocus}
