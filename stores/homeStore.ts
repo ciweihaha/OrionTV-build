@@ -142,6 +142,10 @@ interface HomeState {
 // 内存缓存，应用生命周期内有效
 const dataCache = new Map<string, CacheItem>();
 
+// 正在进行的 loadMoreData 属于哪个分类：切分类时旧请求可能还在飞，
+// 新分类的加载不能被旧请求的 loadingMore 挡住（旧请求写结果时会被分类校验拦下）。
+let activeLoadCategory: Category | null = null;
+
 const useHomeStore = create<HomeState>((set, get) => ({
   categories: initialCategories,
   selectedCategory: initialCategories[0],
@@ -187,7 +191,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
   loadMoreData: async () => {
     const { selectedCategory, pageStart, aggPage, loadingMore, hasMore } = get();
-    if (loadingMore || !hasMore) return;
+    if (!hasMore) return;
+    // 同一分类的重复加载才挡；切分类后旧请求还在飞时，新分类的加载要放行，
+    // 旧请求写结果时会被下面的分类校验拦下，不会写错数据
+    if (loadingMore && activeLoadCategory === selectedCategory) return;
+    // 本次加载归属的分类：每次 await 之后校验，分类变了就丢弃结果，不再写 store
+    const loadCategory = selectedCategory;
+    const isStale = () => get().selectedCategory !== loadCategory;
+    activeLoadCategory = selectedCategory;
 
     if (selectedCategory.cmsType ? aggPage > 0 : pageStart > 0) {
       set({ loadingMore: true });
@@ -201,6 +212,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           return;
         }
         const records = await PlayRecordManager.getAll();
+        if (isStale()) return;
         const rowItems = Object.entries(records)
           .map(([key, record]) => {
             const [source, id] = key.split("+");
@@ -234,6 +246,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           const fallbackType = cat.type === "movie" ? "movie" : "tv";
           const fallbackTag = getCmsFallbackTag(cat);
           const doubanResult = await api.getDoubanData(fallbackType, fallbackTag, 20, 0);
+          if (isStale()) return;
           const doubanItems = doubanResult.list.map((item) => ({
             ...item,
             id: item.title,
@@ -251,7 +264,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
         let result;
         try {
           result = await api.getAggCategory(cmsType, nextPg);
+          if (isStale()) return;
         } catch (aggError) {
+          if (isStale()) return;
           if (nextPg === 1) {
             await fallbackToDouban();
             return;
@@ -333,6 +348,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           20,
           pageStart
         );
+        if (isStale()) return;
 
         const newItems = result.list.map((item) => ({
           ...item,
@@ -403,6 +419,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
         set({ hasMore: false });
       }
     } catch (err: any) {
+      // 分类已变：旧请求的错误不写给新分类
+      if (isStale()) return;
       let errorMessage = "加载失败，请重试";
 
       if (err.message === "API_URL_NOT_SET") {
@@ -425,6 +443,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
       set({ error: errorMessage });
     } finally {
+      if (activeLoadCategory === loadCategory) {
+        activeLoadCategory = null;
+      }
       set({ loading: false, loadingMore: false });
     }
   },
