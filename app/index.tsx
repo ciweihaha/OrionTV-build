@@ -133,14 +133,19 @@ export default function HomeScreen() {
   }, [apiConfigStatus.needsConfiguration, error, clearError]);
 
   useEffect(() => {
-    if (!loading && contentData.length > 0) {
+    if (loading) {
+      fadeAnim.setValue(0);
+    } else if (contentData.length > 0) {
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 300,
         useNativeDriver: true,
       }).start();
-    } else if (loading) {
-      fadeAnim.setValue(0);
+    } else {
+      // 空列表也要恢复不透明：原来只有“有内容”才把透明度动画回 1，
+      // 空分类加载完后透明度还停在加载时置的 0，空态提示
+      // （"该分类下暂无内容"）被盖住，页面一片空白
+      fadeAnim.setValue(1);
     }
   }, [loading, contentData.length, fadeAnim]);
 
