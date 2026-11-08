@@ -56,15 +56,22 @@ export default function SearchScreen() {
   // 搜索序号：只有最新一次搜索能关掉 loading，避免被取消的旧搜索把新搜索的
   // loading 状态误关掉。
   const searchSeqRef = useRef(0);
+  // 被防抖顶掉的上一次 handleSearch 调用：它的 promise 也要 resolve，
+  // 否则调用方（如果 await）会永远等下去
+  const pendingResolveRef = useRef<(() => void) | null>(null);
 
   const handleSearch = async (searchText?: string) => {
     // 防抖 300ms
     if (searchDebounceTimer.current) {
       clearTimeout(searchDebounceTimer.current);
+      pendingResolveRef.current?.();
+      pendingResolveRef.current = null;
     }
 
     return new Promise<void>((resolve) => {
+      pendingResolveRef.current = resolve;
       searchDebounceTimer.current = setTimeout(async () => {
+        pendingResolveRef.current = null;
         const term = typeof searchText === "string" ? searchText : keyword;
         if (!term.trim()) {
           Keyboard.dismiss();
@@ -86,6 +93,8 @@ export default function SearchScreen() {
             // 搜索成功后记录历史（V1.5）
             SearchHistoryManager.add(term).then(() => SearchHistoryManager.get()).then(setSearchHistory).catch(() => {});
           } else {
+            // 空结果也要清掉旧结果，避免下次进搜索时短暂闪出上一轮的旧卡片
+            setResults([]);
             setError("没有找到相关内容");
           }
         } catch (err) {
@@ -144,14 +153,6 @@ export default function SearchScreen() {
       searchAbortController.current?.abort();
     };
   }, []);
-
-  // useEffect(() => {
-  //   // Focus the text input when the screen loads
-  //   const timer = setTimeout(() => {
-  //     textInputRef.current?.focus();
-  //   }, 200);
-  //   return () => clearTimeout(timer);
-  // }, []);
 
   const onSearchPress = () => handleSearch();
 
