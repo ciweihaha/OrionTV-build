@@ -89,10 +89,12 @@ const getRemotePageHTML = () => {
               document.getElementById("pairSection").style.display = "block";
               document.getElementById("inputSection").style.display = "none";
               alert("配对已失效，请重新输入配对码");
+            } else {
+              // 只有发送成功才清空输入框：失败时留着文字，用户重配后能直接再发
+              input.value = '';
             }
           })
           .catch(err => console.warn('Message send failed:', err));
-          input.value = '';
         }
       }
     </script>
