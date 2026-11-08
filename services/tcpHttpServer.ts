@@ -123,15 +123,21 @@ class TCPHttpServer {
           logger.debug('[TCPHttpServer] Client connected');
           
           let requestData = '';
-          
+          // 请求体上限按 UTF-8 字节算：requestData.length 是 UTF-16 码元数，
+          // 中文正文会少算约 3 倍（与 m3u8.ts 的 R16、storage.ts 的 R42 同类问题）
+          let requestByteLength = 0;
+
           // 请求体上限 1MB，防恶意客户端无限发送耗尽内存
           const MAX_REQUEST_BYTES = 1024 * 1024;
           socket.on('data', async (data: string | Buffer) => {
-            requestData += data.toString();
-            if (requestData.length > MAX_REQUEST_BYTES) {
+            const chunk = data.toString();
+            requestData += chunk;
+            requestByteLength += new TextEncoder().encode(chunk).length;
+            if (requestByteLength > MAX_REQUEST_BYTES) {
               logger.error('[TCPHttpServer] Request too large, closing connection');
               socket.end();
               requestData = '';
+              requestByteLength = 0;
               return;
             }
 
@@ -175,6 +181,7 @@ class TCPHttpServer {
               
               socket.end();
               requestData = '';
+              requestByteLength = 0;
             }
           });
 
