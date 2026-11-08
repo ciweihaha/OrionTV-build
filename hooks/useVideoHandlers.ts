@@ -147,9 +147,14 @@ export const useVideoHandlers = ({
             logger.info(`[PERF] Video readyToPlay - video ready to play`);
             try {
               // 1. 先设置位置（如果需要）：断点优先；无断点且开启自动跳过片头时跳到片头结束处
-              const skipIntroOnReady = autoSkipIntro && !initialPosition && introEndTime ? introEndTime : 0;
+              // 片长已知时，断点/片头标记超过本集片长不跳：标记是按剧保存的，
+              // 短集继承长集的标记后跳到片长之外会直接播完切集；片长未知
+              // （直播流）时保持原行为
+              const durationMillis = Number.isFinite(player.duration) ? player.duration * 1000 : 0;
+              const withinDuration = (ms: number) => !durationMillis || ms < durationMillis;
+              const skipIntroOnReady = autoSkipIntro && !initialPosition && introEndTime && withinDuration(introEndTime) ? introEndTime : 0;
               const jumpPosition = initialPosition || skipIntroOnReady || 0;
-              if (jumpPosition > 0) {
+              if (jumpPosition > 0 && withinDuration(jumpPosition)) {
                 logger.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
                 player.currentTime = jumpPosition / 1000;
               }
