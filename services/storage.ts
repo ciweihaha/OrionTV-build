@@ -77,6 +77,19 @@ const enqueueLocalWrite = <T>(task: () => Promise<T>): Promise<T> => {
   return run;
 };
 
+// 服务端收藏切换也串行：API 路径的 toggle 是“先查后改”两次请求，连续点两次
+// 收藏并发时都会读到同一个旧状态，结果是收藏两次还是收藏（应为取消收藏）
+// ——与本地路径同类的竞态（第 15 轮只修了本地路径）
+let apiToggleChain: Promise<void> = Promise.resolve();
+const enqueueApiToggle = <T>(task: () => Promise<T>): Promise<T> => {
+  const run = apiToggleChain.then(task, task);
+  apiToggleChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+};
+
 // --- PlayerSettingsManager (Uses AsyncStorage) ---
 /** 播放器个性化设置上限（仅用户自定义过片头/片尾/倍速的条目才会写入） */
 const MAX_PLAYER_SETTINGS = 200;
@@ -211,14 +224,18 @@ export class FavoriteManager {
         return true;
       });
     }
-    const isFav = await this.isFavorited(source, id);
-    if (isFav) {
-      await this.remove(source, id);
-      return false;
-    } else {
-      await this.save(source, id, item);
-      return true;
-    }
+    // 服务端路径也要串行（enqueueApiToggle）：两次 toggle 并发时都会读到
+    // 同一个旧状态，收藏两次还是收藏（应为取消收藏）
+    return enqueueApiToggle(async () => {
+      const isFav = await this.isFavorited(source, id);
+      if (isFav) {
+        await this.remove(source, id);
+        return false;
+      } else {
+        await this.save(source, id, item);
+        return true;
+      }
+    });
   }
 
   static async clearAll(): Promise<void> {
