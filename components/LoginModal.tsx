@@ -87,7 +87,14 @@ const LoginModal = () => {
     }
     setIsLoading(true);
     try {
-      await api.login(isLocalStorage ? undefined : username, password);
+      // 登录接口返回 200 + {ok: false} 时不抛错：必须先判结果，
+      // 否则密码错了也会接着存错凭据、弹“登录成功”、关掉登录框，
+      // 下次 401 又用错凭据自动重登，等于白登一次
+      const result = await api.login(isLocalStorage ? undefined : username, password);
+      if (!result || !result.ok) {
+        Toast.show({ type: "error", text1: "登录失败", text2: "用户名或密码错误" });
+        return;
+      }
       await checkLoginStatus(apiBaseUrl);
       await refreshPlayRecords();
 
