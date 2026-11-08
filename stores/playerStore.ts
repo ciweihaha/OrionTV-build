@@ -4,7 +4,7 @@ import type { VideoPlayer } from "expo-video";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
 import { useSettingsStore } from "@/stores/settingsStore";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('PlayerStore');
 
