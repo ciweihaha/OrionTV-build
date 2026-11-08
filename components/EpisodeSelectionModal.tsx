@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Modal, FlatList } from "react-native";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
@@ -13,6 +13,15 @@ export const EpisodeSelectionModal: React.FC = () => {
 
   const [episodeGroupSize] = useState(30);
   const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(Math.floor(currentEpisodeIndex / episodeGroupSize));
+
+  // 打开弹窗时回到当前集所在的分组：这个 state 只在首次渲染时初始化，
+  // 播到后面的集再打开弹窗会停留在旧分组，当前集不在列表里、也没有
+  // hasTVPreferredFocus 的焦点，电视上焦点无处安放
+  useEffect(() => {
+    if (showEpisodeModal) {
+      setSelectedEpisodeGroup(Math.floor(currentEpisodeIndex / episodeGroupSize));
+    }
+  }, [showEpisodeModal, currentEpisodeIndex, episodeGroupSize]);
 
   const onSelectEpisode = (index: number) => {
     playEpisode(index);
