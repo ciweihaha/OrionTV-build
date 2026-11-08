@@ -1,4 +1,5 @@
 import { API } from "../api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
   setItem: jest.fn(async () => undefined),
@@ -249,5 +250,65 @@ describe("API URL 参数编码", () => {
     );
     expect(fetchMock.mock.calls[0][0]).toContain("source=src%261");
     expect(fetchMock.mock.calls[0][0]).toContain("id=id%20%232%20");
+  });
+});
+
+describe("API.getAggCategory 重试语义（第 29 轮）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("4xx 不重试：一次 404 直接抛错，不多发请求、不多等退避", async () => {
+    fetchMock.mockResolvedValue(makeResponse(404, { code: 0, list: [] }));
+    await expect(api.getAggCategory(1, 1)).rejects.toThrow("HTTP error! status: 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("5xx 重试：两次 500 后 200 成功，共发 3 次请求", async () => {
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(500, {}))
+      .mockResolvedValueOnce(makeResponse(500, {}))
+      .mockResolvedValueOnce(makeResponse(200, { code: 1, list: [{ id: "1" }] }));
+    const res = await api.getAggCategory(1, 1);
+    expect(res.code).toBe(1);
+    expect(res.list).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  }, 10000);
+});
+
+describe("API.logout 登录标记清理（第 30 轮）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("远程登出失败（断网）也清掉 authCookies 标记，不留着下次自动登录", async () => {
+    fetchMock.mockRejectedValue(new Error("Network request failed"));
+    await expect(api.logout()).rejects.toThrow("Network request failed");
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("authCookies", "");
+  });
+
+  it("远程登出成功时清标记并返回结果", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { ok: true }));
+    const res = await api.logout();
+    expect(res.ok).toBe(true);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith("authCookies", "");
   });
 });
