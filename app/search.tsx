@@ -32,7 +32,7 @@ export default function SearchScreen() {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const textInputRef = useRef<TextInputInstance>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
-  const { showModal: showRemoteModal, lastMessage, targetPage, clearMessage } = useRemoteControlStore();
+  const { showModal: showRemoteModal, lastMessage, lastMessageAt, targetPage, clearMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();
   const router = useRouter();
 
@@ -136,13 +136,14 @@ export default function SearchScreen() {
   useEffect(() => {
     if (lastMessage && targetPage === 'search') {
       logger.debug("Received remote input:", lastMessage);
-      const realMessage = lastMessage.split("_")[0];
-      setKeyword(realMessage);
-      handleSearch(realMessage);
+      // 消息原样使用：之前这里 split("_")[0] 会把含下划线的搜索词截断
+      // （如下划线分隔的时间戳后缀根本不存在于这条链路）；重复消息靠 lastMessageAt 区分
+      setKeyword(lastMessage);
+      handleSearch(lastMessage);
       clearMessage(); // Clear the message after processing
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMessage, targetPage]);
+  }, [lastMessage, lastMessageAt, targetPage]);
 
   // 组件卸载时清理防抖定时器，并取消进行中的搜索请求
   useEffect(() => {
