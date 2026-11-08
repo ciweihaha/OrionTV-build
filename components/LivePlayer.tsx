@@ -36,6 +36,10 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
       clearTimeout(timeoutRef.current);
     }
 
+    // 换台后重置“已上报”标记：同一个 URL 再次切回来失败时也要重新上报，
+    // 否则切回之前坏过的台会卡在“加载失败”且不再自动跳台
+    errorReportedForRef.current = null;
+
     if (streamUrl) {
       setIsLoading(true);
       setIsTimeout(false);
