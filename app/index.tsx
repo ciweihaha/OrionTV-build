@@ -172,8 +172,9 @@ export default function HomeScreen() {
     );
   };
 
-  const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
+  const renderContentItem = ({ item, ref }: { item: RowItem; index: number; ref?: React.Ref<any> }) => (
     <VideoCard
+      ref={ref}
       id={item.id}
       source={item.source}
       title={item.title}
