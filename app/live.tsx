@@ -12,7 +12,7 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
 import { LiveChannelPrefsManager, LiveLastChannel } from "@/services/storage";
-import Logger from "@/utils/Logger";
+import { Logger } from "@/utils/Logger";
 
 const logger = Logger.withTag('LiveScreen');
 
@@ -240,7 +240,6 @@ export default function LiveScreen() {
     };
     loadChannels();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [m3uUrl]);
 
   // ---------- V1.5：坏源自动跳台 ----------

@@ -3,9 +3,7 @@ import { View, Text, StyleSheet, Modal, FlatList } from "react-native";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 
-interface EpisodeSelectionModalProps {}
-
-export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () => {
+export const EpisodeSelectionModal: React.FC = () => {
   const { showEpisodeModal, episodes, currentEpisodeIndex, playEpisode, setShowEpisodeModal } = usePlayerStore();
 
   const [episodeGroupSize] = useState(30);

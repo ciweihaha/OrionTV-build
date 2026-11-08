@@ -137,6 +137,9 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       textFadeAnimation,
       ...shapeAnimations,
     ]).start();
+    // Animated values are stable refs created once on mount; the effect
+    // intentionally runs only once, so the dep array stays empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const animatedStyles = {
