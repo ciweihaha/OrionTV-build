@@ -133,10 +133,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         }
       );
 
-      set({ 
+      set({
         downloadedPath: filePath,
         downloading: false,
         downloadProgress: 100,
+        // 下载完成务必把弹窗重新亮出来：下载中途按返回关掉弹窗后，
+        // 下载是在后台继续的；不亮出来用户就不知道下完了、也没入口安装，
+        // 那个 APK 就一直躺在文档目录里
+        showUpdateModal: true,
       });
     } catch (error) {
       logger.warn('下载失败:', error);
