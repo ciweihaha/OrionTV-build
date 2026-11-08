@@ -183,6 +183,37 @@ describe("API._fetch 取消与 401 重试语义", () => {
   });
 });
 
+describe("API.searchVideos 取消", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("调用方取消时以 AbortError 拒绝，不走超时分支", async () => {
+    fetchMock.mockImplementation(pendingUntilAbort);
+    const caller = new AbortController();
+    const promise = api.searchVideos("test", caller.signal);
+    await waitFor(() => fetchMock.mock.calls.length === 1);
+    caller.abort();
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("不传 signal 时正常返回结果", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { results: [{ id: "1", title: "t" }] }));
+    const res = await api.searchVideos("test");
+    expect(res.results).toHaveLength(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/search?q=test");
+  });
+});
+
 describe("API URL 参数编码", () => {
   let fetchMock: jest.Mock;
   let api: API;
