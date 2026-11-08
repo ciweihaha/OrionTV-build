@@ -1,4 +1,4 @@
-import { Platform, Dimensions } from "react-native";
+import { Dimensions } from "react-native";
 import { DeviceType } from "@/hooks/useResponsiveLayout";
 
 export const DeviceUtils = {
