@@ -55,14 +55,13 @@ const VideoCardTablet = forwardRef<ViewInstance, VideoCardTabletProps>(
     const [fadeAnim] = useState(new Animated.Value(0));
     const [isPressed, setIsPressed] = useState(false);
 
-    const longPressTriggered = useRef(false);
+    // 长按后松手会紧跟着触发一次 onPress：用时间窗挡掉。原来用 sticky 标志，
+    // 点“取消”后标志不清，下一次点卡片会被白白吃掉一次
+    const longPressAt = useRef(0);
     const scale = useRef(new Animated.Value(1)).current;
 
     const handlePress = () => {
-      if (longPressTriggered.current) {
-        longPressTriggered.current = false;
-        return;
-      }
+      if (Date.now() - longPressAt.current < 1000) return;
       
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
@@ -109,7 +108,7 @@ const VideoCardTablet = forwardRef<ViewInstance, VideoCardTabletProps>(
     const handleLongPress = () => {
       if (progress === undefined) return;
 
-      longPressTriggered.current = true;
+      longPressAt.current = Date.now();
 
       Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
         {
