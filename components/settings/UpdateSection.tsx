@@ -5,12 +5,14 @@ import { StyledButton } from "../StyledButton";
 import { useUpdateStore } from "@/stores/updateStore";
 
 export function UpdateSection({ onFocus }: { onFocus?: () => void }) {
-  const { 
-    currentVersion, 
-    remoteVersion, 
-    updateAvailable, 
-    downloading, 
-    downloadProgress, 
+  const {
+    currentVersion,
+    remoteVersion,
+    updateAvailable,
+    downloading,
+    downloadProgress,
+    downloadedPath,
+    installUpdate,
     checkForUpdate,
     isLatestVersion,
     error
@@ -61,6 +63,16 @@ export function UpdateSection({ onFocus }: { onFocus?: () => void }) {
         <View style={styles.row}>
           <ThemedText style={styles.label}>下载进度</ThemedText>
           <ThemedText style={styles.value}>{downloadProgress}%</ThemedText>
+        </View>
+      )}
+
+      {/* 已下载好但弹窗被关掉时，设置页要有安装入口：否则 APK 一直躺在
+          文档目录里，下次检查更新还会重新下载一遍 */}
+      {downloadedPath && !downloading && (
+        <View style={styles.buttonContainer}>
+          <StyledButton onPress={installUpdate} style={styles.button}>
+            <ThemedText style={styles.buttonText}>安装已下载的更新</ThemedText>
+          </StyledButton>
         </View>
       )}
 
@@ -138,11 +150,5 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: Platform.isTV ? 16 : 14,
     fontWeight: "500",
-  },
-  hint: {
-    fontSize: Platform.isTV ? 14 : 12,
-    color: "#666",
-    marginTop: 12,
-    textAlign: "center",
   },
 });
