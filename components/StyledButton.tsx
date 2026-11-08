@@ -15,98 +15,101 @@ interface StyledButtonProps extends PressableProps {
   textStyle?: StyleProp<TextStyle>;
 }
 
+// 样式只依赖静态的 Colors.dark：提到模块级，别每个按钮每次渲染都
+// StyleSheet.create 两次（首页一个网格几十个按钮，滚动时反复渲染，
+// 白白分配还让 style 数组每次都是新身份）
+const colors = Colors.dark;
+
+const variantStyles = {
+  default: StyleSheet.create({
+    button: {
+      backgroundColor: colors.border,
+    },
+    text: {
+      color: colors.text,
+    },
+    selectedButton: {
+      backgroundColor: colors.primary,
+    },
+    focusedButton: {
+      borderColor: colors.primary,
+    },
+    selectedText: {
+      color: Colors.dark.text,
+    },
+  }),
+  primary: StyleSheet.create({
+    button: {
+      backgroundColor: "transparent",
+    },
+    text: {
+      color: colors.text,
+    },
+    focusedButton: {
+      backgroundColor: colors.primary,
+      borderColor: colors.background,
+    },
+    selectedButton: {
+      backgroundColor: colors.primary,
+    },
+    selectedText: {
+      color: colors.link,
+    },
+  }),
+  ghost: StyleSheet.create({
+    button: {
+      backgroundColor: "transparent",
+    },
+    text: {
+      color: colors.text,
+    },
+    focusedButton: {
+      backgroundColor: "rgba(119, 119, 119, 0.2)",
+      borderColor: colors.primary,
+    },
+    selectedButton: {},
+    selectedText: {},
+  }),
+};
+
+const styles = StyleSheet.create({
+  button: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "transparent",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  focusedButton: {
+    backgroundColor: colors.link,
+    borderColor: colors.background,
+    elevation: 5,
+    shadowColor: colors.link,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+  },
+  selectedButton: {
+    backgroundColor: colors.tint,
+  },
+  text: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  selectedText: {
+    color: Colors.dark.text,
+  },
+});
+
 export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
   ({ children, text, variant = "default", isSelected = false, style, textStyle, ...rest }, ref) => {
-    const colorScheme = "dark";
-    const colors = Colors[colorScheme];
     const [isFocused, setIsFocused] = React.useState(false);
     const animationStyle = useButtonAnimation(isFocused);
     const deviceType = useResponsiveLayout().deviceType;
-
-    const variantStyles = {
-      default: StyleSheet.create({
-        button: {
-          backgroundColor: colors.border,
-        },
-        text: {
-          color: colors.text,
-        },
-        selectedButton: {
-          backgroundColor: colors.primary,
-        },
-        focusedButton: {
-          borderColor: colors.primary,
-        },
-        selectedText: {
-          color: Colors.dark.text,
-        },
-      }),
-      primary: StyleSheet.create({
-        button: {
-          backgroundColor: "transparent",
-        },
-        text: {
-          color: colors.text,
-        },
-        focusedButton: {
-          backgroundColor: colors.primary,
-          borderColor: colors.background,
-        },
-        selectedButton: {
-          backgroundColor: colors.primary,
-        },
-        selectedText: {
-          color: colors.link,
-        },
-      }),
-      ghost: StyleSheet.create({
-        button: {
-          backgroundColor: "transparent",
-        },
-        text: {
-          color: colors.text,
-        },
-        focusedButton: {
-          backgroundColor: "rgba(119, 119, 119, 0.2)",
-          borderColor: colors.primary,
-        },
-        selectedButton: {},
-        selectedText: {},
-      }),
-    };
-
-    const styles = StyleSheet.create({
-      button: {
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 8,
-        borderWidth: 2,
-        borderColor: "transparent",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-      },
-      focusedButton: {
-        backgroundColor: colors.link,
-        borderColor: colors.background,
-        elevation: 5,
-        shadowColor: colors.link,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 15,
-      },
-      selectedButton: {
-        backgroundColor: colors.tint,
-      },
-      text: {
-        fontSize: 16,
-        fontWeight: "500",
-        color: colors.text,
-      },
-      selectedText: {
-        color: Colors.dark.text,
-      },
-    });
 
     return (
       <Animated.View style={[animationStyle, style]}>
