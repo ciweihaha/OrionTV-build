@@ -1,5 +1,5 @@
 import React, { forwardRef } from "react";
-import { Animated, Pressable, StyleSheet, StyleProp, ViewStyle, PressableProps, TextStyle, Platform } from "react-native";
+import { Animated, Pressable, StyleSheet, StyleProp, ViewStyle, PressableProps, TextStyle } from "react-native";
 import type { ViewInstance } from "react-native";
 import { ThemedText } from "./ThemedText";
 import { Colors } from "@/constants/Colors";
@@ -111,7 +111,7 @@ export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
     return (
       <Animated.View style={[animationStyle, style]}>
         <Pressable
-          android_ripple={Platform.isTV || deviceType !== 'tv'? { color: 'transparent' } : { color: Colors.dark.link }}
+          android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
           ref={ref}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
