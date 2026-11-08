@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
-import { View, Text, StyleSheet, Pressable, TouchableOpacity, Alert, Animated, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, TouchableOpacity, Alert, Animated } from "react-native";
 import type { ViewInstance } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -153,7 +153,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
     return (
       <Animated.View style={[styles.wrapper, animatedStyle, { opacity: fadeAnim }]}>
         <Pressable
-          android_ripple={Platform.isTV || deviceType !== 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
+          android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
           onPress={handlePress}
           onLongPress={handleLongPress}
           onFocus={handleFocus}
