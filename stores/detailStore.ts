@@ -339,7 +339,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
     set({ detail });
     const { source, id } = detail;
     const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
-    set({ isFavorited });
+    // 切源很快时，旧的收藏检查可能后返回：只给当前仍在显示的详情写，
+    // 否则会把上一个源的收藏状态写到新源上
+    if (get().detail === detail) {
+      set({ isFavorited });
+    }
   },
 
   abort: () => {
@@ -400,26 +404,14 @@ const useDetailStore = create<DetailState>((set, get) => ({
       return null;
     }
     
-    // 优先选择有高分辨率的source
+    // 优先选择清晰度最高的 source：按数字高度排，2160p/1440p 也能正确排在前面
+    //（原来只认 1080/720/480/360 四档，4K 会被当成“未知”排在 360p 后面）
     const sortedSources = availableSources.sort((a, b) => {
-      const aResolution = a.resolution || '';
-      const bResolution = b.resolution || '';
-      
-      // 优先级: 1080p > 720p > 480p > 360p > 无分辨率
-      const RESOLUTION_PRIORITY_1080P = 4;
-      const RESOLUTION_PRIORITY_720P = 3;
-      const RESOLUTION_PRIORITY_480P = 2;
-      const RESOLUTION_PRIORITY_360P = 1;
-      const RESOLUTION_PRIORITY_UNKNOWN = 0;
-      const resolutionPriority = (res: string) => {
-        if (res.includes('1080')) return RESOLUTION_PRIORITY_1080P;
-        if (res.includes('720')) return RESOLUTION_PRIORITY_720P;
-        if (res.includes('480')) return RESOLUTION_PRIORITY_480P;
-        if (res.includes('360')) return RESOLUTION_PRIORITY_360P;
-        return RESOLUTION_PRIORITY_UNKNOWN;
+      const height = (res: string) => {
+        const m = res.match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : 0;
       };
-      
-      return resolutionPriority(bResolution) - resolutionPriority(aResolution);
+      return height(b.resolution || '') - height(a.resolution || '');
     });
     
     const selectedSource = sortedSources[0];
