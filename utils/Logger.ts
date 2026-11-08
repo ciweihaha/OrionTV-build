@@ -15,15 +15,18 @@ interface LoggerOptions {
   level?: LogLevel;
 }
 
-class LoggerClass {
-  private minLevel: LogLevel = LogLevel.DEBUG;
+// 日志级别全局共享：withTag 产生的新实例也要受 setMinLevel 控制
+//（原来 minLevel 是实例字段，调 setMinLevel 只改根实例，各模块的
+// tagged logger 各自一份旧值，级别过滤等于失效）
+let sharedMinLevel: LogLevel = LogLevel.DEBUG;
 
+class LoggerClass {
   /**
    * 设置最小日志级别
    */
   setMinLevel(level: LogLevel): void {
     if (__DEV__) {
-      this.minLevel = level;
+      sharedMinLevel = level;
     }
   }
 
@@ -60,7 +63,7 @@ class LoggerClass {
   debug(optionsOrMessage: LoggerOptions | any, message?: any, ...args: any[]): void {
     if (!__DEV__) return;
 
-    if (this.minLevel > LogLevel.DEBUG) return;
+    if (sharedMinLevel > LogLevel.DEBUG) return;
 
     if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
@@ -78,7 +81,7 @@ class LoggerClass {
   info(optionsOrMessage: LoggerOptions | any, message?: any, ...args: any[]): void {
     if (!__DEV__) return;
 
-    if (this.minLevel > LogLevel.INFO) return;
+    if (sharedMinLevel > LogLevel.INFO) return;
 
     if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
@@ -96,7 +99,7 @@ class LoggerClass {
   warn(optionsOrMessage: LoggerOptions | any, message?: any, ...args: any[]): void {
     if (!__DEV__) return;
 
-    if (this.minLevel > LogLevel.WARN) return;
+    if (sharedMinLevel > LogLevel.WARN) return;
 
     if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
@@ -114,7 +117,7 @@ class LoggerClass {
   error(optionsOrMessage: LoggerOptions | any, message?: any, ...args: any[]): void {
     if (!__DEV__) return;
 
-    if (this.minLevel > LogLevel.ERROR) return;
+    if (sharedMinLevel > LogLevel.ERROR) return;
 
     if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
@@ -129,7 +132,6 @@ class LoggerClass {
    */
   withTag(tag: string): LoggerClass {
     const taggedLogger = new LoggerClass();
-    taggedLogger.minLevel = this.minLevel;
     
     const originalDebug = taggedLogger.debug.bind(taggedLogger);
     const originalInfo = taggedLogger.info.bind(taggedLogger);
