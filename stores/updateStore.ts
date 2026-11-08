@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import updateService from '../services/updateService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('UpdateStore');
 
