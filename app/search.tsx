@@ -50,16 +50,17 @@ export default function SearchScreen() {
 
   // 搜索防抖：防止远程输入连续触发或用户快速重复点击产生大量请求
   const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isSearchingRef = useRef(false);
+  // 进行中的搜索请求：新搜索到来时取消上一次，而不是丢弃新搜索；
+  // 组件卸载时同样取消，避免请求完成后还往已卸载的组件写状态。
+  const searchAbortController = useRef<AbortController | null>(null);
+  // 搜索序号：只有最新一次搜索能关掉 loading，避免被取消的旧搜索把新搜索的
+  // loading 状态误关掉。
+  const searchSeqRef = useRef(0);
 
   const handleSearch = async (searchText?: string) => {
     // 防抖 300ms
     if (searchDebounceTimer.current) {
       clearTimeout(searchDebounceTimer.current);
-    }
-    // 正在搜索中则忽略重复触发
-    if (isSearchingRef.current) {
-      return;
     }
 
     return new Promise<void>((resolve) => {
@@ -71,11 +72,15 @@ export default function SearchScreen() {
           return;
         }
         Keyboard.dismiss();
-        isSearchingRef.current = true;
+        // 取消上一次进行中的搜索，再发起本次搜索
+        searchAbortController.current?.abort();
+        const controller = new AbortController();
+        searchAbortController.current = controller;
+        const seq = ++searchSeqRef.current;
         setLoading(true);
         setError(null);
         try {
-          const response = await api.searchVideos(term);
+          const response = await api.searchVideos(term, controller.signal);
           if (response.results.length > 0) {
             setResults(response.results);
             // 搜索成功后记录历史（V1.5）
@@ -84,6 +89,11 @@ export default function SearchScreen() {
             setError("没有找到相关内容");
           }
         } catch (err) {
+          // 被新搜索或卸载取消的请求不算失败：静默处理，不显示错误
+          //（与 stores/detailStore.ts 的 AbortError 处理一致）。
+          if (err instanceof Error && err.name === "AbortError") {
+            return;
+          }
           // 把真实原因显示出来，不再统一吞成一句话：超时、未配服务器、登录过期、
           // 服务端报错各有各的提示，方便定位是应用问题还是服务器问题。
           const msg = err instanceof Error ? err.message : "";
@@ -104,8 +114,10 @@ export default function SearchScreen() {
           }
           logger.info("Search failed:", err);
         } finally {
-          setLoading(false);
-          isSearchingRef.current = false;
+          // 只有最新一次搜索能关 loading；被取消的旧搜索不碰新搜索的状态
+          if (seq === searchSeqRef.current) {
+            setLoading(false);
+          }
           resolve();
         }
       }, 300);
@@ -123,12 +135,13 @@ export default function SearchScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMessage, targetPage]);
 
-  // 组件卸载时清理防抖定时器
+  // 组件卸载时清理防抖定时器，并取消进行中的搜索请求
   useEffect(() => {
     return () => {
       if (searchDebounceTimer.current) {
         clearTimeout(searchDebounceTimer.current);
       }
+      searchAbortController.current?.abort();
     };
   }, []);
 
