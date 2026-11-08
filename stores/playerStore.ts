@@ -15,6 +15,13 @@ const RECORD_SAVE_THROTTLE_MS = 10_000;
 const SEEK_RESET_DELAY_MS = 1_000;
 
 /**
+ * loadVideo 并发代次：快速连点两集（或切源时又点集）会起两次 loadVideo，
+ * 旧的那次 await 回来后不能覆盖新的——否则播的集数与用户点的对不上。
+ * （与第 14 轮 homeStore、第 21 轮 useApiConfig 同一类竞态。）
+ */
+let loadVideoSeq = 0;
+
+/**
  * 正在处理换源的失败 URL：播放器 error 事件和 20s 加载超时可能同时触发，
  * 两次并发会选到同一个备用源、重复 setDetail；只处理第一次。
  * （模块级变量：换源是进程内全局互斥，用 store 字段还要多一次 set 触发订阅。）
@@ -122,6 +129,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   loadVideo: async ({ source, id, episodeIndex, position, title }) => {
     const perfStart = performance.now();
+    const seq = ++loadVideoSeq;
     logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, title: ${title}`);
     
     let detail = useDetailStore.getState().detail;
@@ -148,6 +156,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       logger.info(`[PERF] DetailStore.init START - ${title}`);
       
       await useDetailStore.getState().init(title, source, id);
+      // 已有更新的 loadVideo 在跑：这次的结果作废，不再往下写 store
+      if (seq !== loadVideoSeq) {
+        logger.info(`[PERF] loadVideo superseded after detail init, ignoring`);
+        return;
+      }
       
       const detailInitEnd = performance.now();
       logger.info(`[PERF] DetailStore.init END - took ${(detailInitEnd - detailInitStart).toFixed(2)}ms`);
@@ -243,6 +256,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const storageEnd = performance.now();
       logger.info(`[PERF] PlayerSettingsManager.get took ${(storageEnd - storagePlayRecordEnd).toFixed(2)}ms`);
       logger.info(`[PERF] Total storage operations took ${(storageEnd - storageStart).toFixed(2)}ms`);
+      // 存储读完才发现已被更新的 loadVideo 超过：不写回旧数据
+      if (seq !== loadVideoSeq) {
+        logger.info(`[PERF] loadVideo superseded after storage read, ignoring`);
+        return;
+      }
       
       const initialPositionFromRecord = playRecord?.play_time ? playRecord.play_time * 1000 : 0;
       const savedPlaybackRate = playerSettings?.playbackRate || 1.0;
@@ -273,7 +291,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       
     } catch (error) {
       logger.debug("Failed to load play record", error);
-      set({ isLoading: false });
+      // 只有当前这次 loadVideo 才清 isLoading，别把新一次的加载状态清掉
+      if (seq === loadVideoSeq) {
+        set({ isLoading: false });
+      }
       
       const perfEnd = performance.now();
       logger.info(`[PERF] PlayerStore.loadVideo ERROR - total time: ${(perfEnd - perfStart).toFixed(2)}ms`);
