@@ -588,7 +588,8 @@ export class API {
           signal: controller.signal,
         });
         if (!response.ok) {
-          const err = new Error(`HTTP error! status: ${response.status}`);
+          const err = new Error(`HTTP error! status: ${response.status}`) as Error & { httpStatus: number };
+          err.httpStatus = response.status;
           if (response.status >= 500 && attempt < 2) {
             // 5xx 可能是边缘节点瞬时故障，值得重试
             lastError = err;
@@ -609,6 +610,9 @@ export class API {
       } catch (e) {
         // 超时(AbortError)/网络失败(TypeError)/读取异常：链路性质错误，重试
         lastError = e;
+        // 4xx 是请求自身问题（参数错、资源不存在），重试也没用，直接抛
+        const httpStatus = (e as { httpStatus?: number } | null)?.httpStatus;
+        if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) throw e;
         if (attempt < 2) continue;
         throw e;
       } finally {
