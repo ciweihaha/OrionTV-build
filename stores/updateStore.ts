@@ -104,8 +104,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   // 开始下载
   startDownload: async () => {
-    const { downloadUrl } = get();
-    
+    const { downloadUrl, downloading } = get();
+
+    // 防重复下载：UI 层已有 disabled 保护，这里再挡一道（连续调用/外部调用时
+    // 两个下载任务会互相干扰进度回调，且各写各的时间戳文件）
+    if (downloading) return;
+
     if (!downloadUrl) {
       set({ error: '下载地址无效' });
       return;
