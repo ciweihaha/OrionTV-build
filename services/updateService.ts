@@ -171,12 +171,19 @@ class UpdateService {
 
         // expo-file-system 58：DownloadTask 进度回调为 `{bytesWritten, totalBytes}`
         //（totalBytes 为 -1 表示服务端未提供 Content-Length）
+        // 注意：进度回调里 throw 毫无作用（native 侧不等它），超限只能靠
+        // pauseAsync 停掉下载——它会让 downloadAsync() 以 null  resolve，
+        // 所以用 abortedForSize 记下来，下载返回后据此抛 APK_TOO_LARGE；
+        // 否则这里会被当成普通失败重试 3 次，白白再下 600MB。
+        let abortedForSize = false;
         const task = File.createDownloadTask(url, targetFile, {
           onProgress: async progress => {
+            if (abortedForSize) return;
             if (progress.bytesWritten > MAX_APK_DOWNLOAD_BYTES) {
               logger.warn(`APK download exceeded ${MAX_APK_DOWNLOAD_BYTES} bytes, aborting`);
+              abortedForSize = true;
               await task.pauseAsync();
-              throw new Error('APK_TOO_LARGE');
+              return;
             }
             if (onProgress && progress.totalBytes > 0) {
               const percent = Math.floor(
@@ -188,6 +195,9 @@ class UpdateService {
         });
 
         const downloadedFile = await task.downloadAsync();
+        if (abortedForSize) {
+          throw new Error('APK_TOO_LARGE');
+        }
         if (!downloadedFile) {
           throw new Error('Download failed: No URI available');
         }
