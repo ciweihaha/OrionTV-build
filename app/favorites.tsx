@@ -36,8 +36,6 @@ export default function FavoritesScreen() {
         poster={item.cover}
         year={item.year}
         api={api}
-        episodeIndex={1}
-        progress={0}
       />
     );
   };
