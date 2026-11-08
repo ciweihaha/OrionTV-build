@@ -215,7 +215,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
         if (isStale()) return;
         const rowItems = Object.entries(records)
           .map(([key, record]) => {
-            const [source, id] = key.split("+");
+            // key 是 `${source}+${id}`：按最后一个 + 切，id 里万一带 + 也不至于截断
+            //（与 app/favorites.tsx 同一处修法）
+            const sep = key.lastIndexOf("+");
+            const source = sep >= 0 ? key.slice(0, sep) : key;
+            const id = sep >= 0 ? key.slice(sep + 1) : "";
             return {
               ...record,
               id,
