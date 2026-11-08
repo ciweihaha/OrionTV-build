@@ -35,18 +35,17 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
     deviceType !== 'mobile' || tab.key !== 'live'
   );
   
-  const handleTabPress = (route: string) => {
-    if (route === '/') {
-      router.push('/');
-    } else {
-      router.push(route as any);
-    }
-  };
-
   const isTabActive = (route: string) => {
     if (route === '/' && pathname === '/') return true;
     if (route !== '/' && pathname === route) return true;
     return false;
+  };
+
+  const handleTabPress = (route: string) => {
+    // 已在当前 tab 时不再 push：否则会在栈里叠出重复页面，返回键要多按
+    // 一次，还会把当前页重新挂载（搜索页的查询和结果会丢、首页会重新加载）
+    if (isTabActive(route)) return;
+    router.push(route as any);
   };
 
   const dynamicStyles = createStyles(spacing);
