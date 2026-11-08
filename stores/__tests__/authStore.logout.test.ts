@@ -39,17 +39,17 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   removeItem: jest.fn(async () => undefined),
 }));
 
-jest.mock("@/utils/Logger", () => ({
-  __esModule: true,
-  default: {
+jest.mock("@/utils/Logger", () => {
+  const loggerStub = {
     withTag: () => ({
       debug: jest.fn(),
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
     }),
-  },
-}));
+  };
+  return { __esModule: true, default: loggerStub, Logger: loggerStub };
+});
 
 const apiLogoutMock = api.logout as jest.Mock;
 const clearMock = LoginCredentialsManager.clear as jest.Mock;
