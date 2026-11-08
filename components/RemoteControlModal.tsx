@@ -31,7 +31,15 @@ export const RemoteControlModal: React.FC = () => {
               配对码：{pairingCode}
             </ThemedText>
           )}
-          <StyledButton text="关闭" onPress={hideModal} style={styles.button} variant="primary" />
+          <StyledButton
+            text="关闭"
+            onPress={hideModal}
+            style={styles.button}
+            variant="primary"
+            // 电视上弹窗打开时把焦点拉进来：否则焦点还留在弹窗后面的页面上，
+            // 按确认会误触后面的按钮，弹窗里的关闭按不到
+            hasTVPreferredFocus
+          />
         </ThemedView>
       </View>
     </Modal>
@@ -70,10 +78,6 @@ const styles = StyleSheet.create({
   statusText: {
     textAlign: "center",
     fontSize: 16,
-  },
-  serverUrlText: {
-    marginTop: 10,
-    fontSize: 12,
   },
   instructions: {
     textAlign: "center",
