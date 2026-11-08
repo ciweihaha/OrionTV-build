@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/ThemedText";
 import VideoCard from "@/components/VideoCard";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import { api, SearchResult } from "@/services/api";
-import { Search, QrCode, X } from "lucide-react-native";
+import { Search, QrCode } from "lucide-react-native";
 import { StyledButton } from "@/components/StyledButton";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { RemoteControlModal } from "@/components/RemoteControlModal";
@@ -75,6 +75,10 @@ export default function SearchScreen() {
         const term = typeof searchText === "string" ? searchText : keyword;
         if (!term.trim()) {
           Keyboard.dismiss();
+          // 空关键词等于没搜：清掉上一轮的结果和报错，别让旧卡片/旧报错
+          // 留在空输入框下面误导人
+          setResults([]);
+          setError(null);
           resolve();
           return;
         }
@@ -250,7 +254,6 @@ export default function SearchScreen() {
                     onPress={() => handleHistoryPress(term)}
                   >
                     <ThemedText style={dynamicStyles.historyChipText} numberOfLines={1}>{term}</ThemedText>
-                    <X size={12} color="#888" />
                   </TouchableOpacity>
                 ))}
               </View>
