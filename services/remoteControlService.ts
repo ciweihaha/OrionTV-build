@@ -1,6 +1,6 @@
 import TCPHttpServer from "./tcpHttpServer";
 import * as Crypto from "expo-crypto";
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('RemoteControl');
 
