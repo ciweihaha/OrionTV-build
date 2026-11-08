@@ -14,6 +14,13 @@ const RECORD_SAVE_THROTTLE_MS = 10_000;
 /** 快进/快退后重置 seeking 状态的延迟（毫秒） */
 const SEEK_RESET_DELAY_MS = 1_000;
 
+/**
+ * 正在处理换源的失败 URL：播放器 error 事件和 20s 加载超时可能同时触发，
+ * 两次并发会选到同一个备用源、重复 setDetail；只处理第一次。
+ * （模块级变量：换源是进程内全局互斥，用 store 字段还要多一次 set 触发订阅。）
+ */
+let handlingErrorUrl: string | null = null;
+
 interface Episode {
   url: string;
   title: string;
@@ -538,14 +545,29 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   handleVideoError: async (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => {
     const perfStart = performance.now();
     logger.error(`[VIDEO_ERROR] Handling ${errorType} error for URL: ${failedUrl}`);
-    
+
+    // 同一 URL 的错误可能由 error 事件和加载超时同时触发：只处理第一次
+    if (handlingErrorUrl === failedUrl) {
+      logger.warn(`[VIDEO_ERROR] Duplicate error for URL, already handling: ${failedUrl.substring(0, 100)}`);
+      return;
+    }
+    // 迟到的旧错误（换源后旧播放器又报了一次）：当前集已不是这个 URL，忽略，
+    // 否则会把刚换上的新源误判为失败、再换一次
+    const currentUrl = selectCurrentEpisode(get())?.url;
+    if (currentUrl && currentUrl !== failedUrl) {
+      logger.warn(`[VIDEO_ERROR] Stale error for URL ${failedUrl.substring(0, 100)}, current episode is different, ignoring`);
+      return;
+    }
+    handlingErrorUrl = failedUrl;
+
     const detailStoreState = useDetailStore.getState();
     const { detail } = detailStoreState;
     const { currentEpisodeIndex } = get();
-    
+
     if (!detail) {
       logger.error(`[VIDEO_ERROR] Cannot fallback - no detail available`);
       set({ isLoading: false });
+      handlingErrorUrl = null;
       return;
     }
     
@@ -565,6 +587,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         text2: "所有播放源都不可用，请稍后重试" 
       });
       set({ isLoading: false });
+      handlingErrorUrl = null;
       return;
     }
     
@@ -604,6 +627,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       logger.error(`[VIDEO_ERROR] Failed to switch to fallback source:`, error);
       set({ isLoading: false });
     }
+    handlingErrorUrl = null;
   },
 }));
 
