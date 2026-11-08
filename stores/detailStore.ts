@@ -135,7 +135,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
         if (preferredResult.length > 0) {
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
           await processAndSetResults(preferredResult, false);
-          set({ loading: false });
+          // 换详情/离开页面时 processAndSetResults 不抛错直接返回（已取消），
+          // 这里不能无条件清 loading，否则会把新一次 init 的加载指示提前关掉
+          if (!signal.aborted) set({ loading: false });
         } else {
           // 降级策略：preferred source失败时立即尝试所有源
           if (preferredSearchError) {
@@ -159,7 +161,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             if (filteredResults.length > 0) {
               logger.info(`[SUCCESS] FALLBACK search found results, proceeding with ${filteredResults[0].source_name}`);
               await processAndSetResults(filteredResults, false);
-              set({ loading: false });
+              if (!signal.aborted) set({ loading: false });
             } else {
               logger.error(`[ERROR] FALLBACK search found no matching results for "${q}"`);
               set({ 
@@ -237,7 +239,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
                 logger.info(`[SUCCESS] Source "${resource.name}" found ${results.length} results for "${q}"`);
                 await processAndSetResults(results, true);
                 if (!firstResultFound) {
-                  set({ loading: false }); // Stop loading indicator on first result
+                  // 已取消时不碰 loading：新一次 init 正在加载，关掉它会闪“未找到”
+                  if (!signal.aborted) set({ loading: false }); // Stop loading indicator on first result
                   firstResultFound = true;
                   logger.info(`[SUCCESS] First result found from "${resource.name}", stopping loading indicator`);
                 }
@@ -245,23 +248,28 @@ const useDetailStore = create<DetailState>((set, get) => ({
                 logger.warn(`[WARN] Source "${resource.name}" returned 0 results for "${q}"`);
               }
             } catch (error) {
+              // 被取消不算失败：直接跳过，否则下面的 totalResults===0 会把旧错误写进新 init
+              if (signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
               logger.error(`[ERROR] Failed to fetch from ${resource.name}:`, error);
             }
           });
 
           await Promise.all(searchPromises);
           
-          // 检查是否找到任何结果
-          if (totalResults === 0) {
+          // 检查是否找到任何结果（已取消时不写 error：新一次 init 正在跑，
+          // 旧错误会盖掉新结果，详情页直接显示“未找到”）
+          if (totalResults === 0 && !signal.aborted) {
             logger.error(`[ERROR] All sources returned 0 results for "${q}"`);
             set({ 
               error: `未找到 "${q}" 的播放源，请尝试其他关键词或稍后重试`,
               loading: false 
             });
-          } else {
+          } else if (!signal.aborted) {
             logger.info(`[SUCCESS] Standard search completed, total results: ${totalResults}`);
           }
         } catch (resourceError) {
+          // 被取消不算失败：getResources 的 AbortError 不能写进新 init 的 error
+          if (signal.aborted || (resourceError instanceof Error && resourceError.name === "AbortError")) return;
           logger.error(`[ERROR] Failed to get resources:`, resourceError);
           set({ 
             error: `获取视频源失败：${resourceError instanceof Error ? resourceError.message : '网络错误，请稍后重试'}`,
@@ -270,6 +278,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
           return;
         }
       }
+
+      // 已取消：后面的最终检查读的是新一次 init 的 state，别动它
+      if (signal.aborted) return;
 
       const favoriteCheckStart = performance.now();
       const finalState = get();
