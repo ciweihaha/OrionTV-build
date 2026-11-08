@@ -10,6 +10,9 @@ const logger = Logger.withTag('SettingsStore');
 // 模块级引用：当前正在进行的 fetchServerConfig Promise。
 // 供 authStore.checkLoginStatus 直接 await，避免用固定超时轮询导致冷启动误判。
 let serverConfigPromise: Promise<void> | null = null;
+/** 发起进行中那次 fetch 时的 apiBaseUrl：地址变了就不能复用旧请求，
+ * 旧请求回来后也不能再写 store（否则会把旧服务器的配置盖到新地址上）。 */
+let serverConfigFetchUrl: string | null = null;
 
 /**
  * 获取当前正在进行的 fetchServerConfig Promise（若没有则返回 null）。
@@ -87,22 +90,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
   fetchServerConfig: () => {
+    // 同一地址已有请求在飞：复用它，不再重复发（冷启动时 loadSettings、
+    // checkLoginStatus、useApiConfig 可能同时触发）。
+    if (serverConfigPromise && serverConfigFetchUrl === api.baseURL) {
+      return serverConfigPromise;
+    }
+    const fetchUrl = api.baseURL;
     const p = (async () => {
       set({ isLoadingServerConfig: true });
       try {
         const config = await api.getServerConfig();
+        // 地址已变：这次结果是旧服务器的，丢弃，别盖掉新地址的配置
+        if (fetchUrl !== api.baseURL) return;
         if (config) {
           storageConfig.setStorageType(config.StorageType);
           set({ serverConfig: config });
         }
       } catch (error) {
-        set({ serverConfig: null });
+        if (fetchUrl === api.baseURL) {
+          set({ serverConfig: null });
+        }
         logger.error("Failed to fetch server config:", error);
       } finally {
-        set({ isLoadingServerConfig: false });
+        // 旧请求的 finally 不能关新请求的 loading
+        if (fetchUrl === api.baseURL) {
+          set({ isLoadingServerConfig: false });
+        }
       }
     })();
     serverConfigPromise = p;
+    serverConfigFetchUrl = fetchUrl;
     // 完成后清掉引用，避免一直捏着一个已完成的 Promise；
     // 只有仍是本次的才清，防止后一次 fetch 刚开始就被前一次的 finally 误清
     p.finally(() => {
@@ -129,7 +146,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       processedApiBaseUrl = processedApiBaseUrl.slice(0, -1);
     }
 
-    if (!/^https?:\/\//i.test(processedApiBaseUrl)) {
+    // 空地址就是“未配置”：别补成 "https://"，那是个非法地址，会让
+    // fetchServerConfig 一直失败、登录判断也跟着错
+    if (processedApiBaseUrl && !/^https?:\/\//i.test(processedApiBaseUrl)) {
       const hostPart = processedApiBaseUrl.split("/")[0];
       // Simple check for IP address format.
       const isIpAddress = /^((\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(hostPart);
