@@ -35,6 +35,9 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const firstCardRef = useRef<any>(null); // <--- 新增
   const scrollToTopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 最近一次滚动位置：回到顶部是动画过程，用户中途又滚下去时，
+  // 500ms 后的聚焦不能再把焦点抢回第一张卡
+  const lastOffsetYRef = useRef(0);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
@@ -72,6 +75,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
       const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - loadMoreThreshold;
 
+      lastOffsetYRef.current = contentOffset.y;
+
       // 显示/隐藏返回顶部按钮
       setShowScrollToTop(contentOffset.y > 200);
 
@@ -91,7 +96,10 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       clearTimeout(scrollToTopTimer.current);
     }
     scrollToTopTimer.current = setTimeout(() => {
-      firstCardRef.current?.focus();
+      // 只有确实回到顶部才聚焦：用户中途又滚下去时别把焦点抢回来
+      if (lastOffsetYRef.current <= 10) {
+        firstCardRef.current?.focus();
+      }
     }, 500); // 500ms 适配大多数动画时长
   };
 
@@ -192,40 +200,32 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={responsiveConfig.deviceType !== 'tv'}
       >
-        {data.length > 0 ? (
-          <>
-            {rows.map((row, rowIndex) => {
-              const isFullRow = row.length === effectiveColumns;
-              const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
+        {rows.map((row, rowIndex) => {
+          const isFullRow = row.length === effectiveColumns;
+          const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
 
-              return (
-                <View key={rowIndex} style={[dynamicStyles.rowContainer, rowStyle]}>
-                  {row.map((item, itemIndex) => {
-                    const actualIndex = rowIndex * effectiveColumns + itemIndex;
-                    const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
-                    const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
+          return (
+            <View key={rowIndex} style={[dynamicStyles.rowContainer, rowStyle]}>
+              {row.map((item, itemIndex) => {
+                const actualIndex = rowIndex * effectiveColumns + itemIndex;
+                const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
+                const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
 
-                    const cardProps = {
-                      style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
-                    };
+                const cardProps = {
+                  style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
+                };
 
-                    return (
-                      // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
-                      <View key={actualIndex} {...cardProps}>
-                        {renderItem({ item, index: actualIndex, ref: actualIndex === 0 ? firstCardRef : undefined })}
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })}
-            {renderFooter()}
-          </>
-        ) : (
-          <View style={commonStyles.center}>
-            <ThemedText>{emptyMessage}</ThemedText>
-          </View>
-        )}
+                return (
+                  // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
+                  <View key={actualIndex} {...cardProps}>
+                    {renderItem({ item, index: actualIndex, ref: actualIndex === 0 ? firstCardRef : undefined })}
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+        {renderFooter()}
       </ScrollView>
       {deviceType!=='tv' && (
         <TouchableOpacity
