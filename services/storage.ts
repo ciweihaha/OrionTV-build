@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { api, PlayRecord as ApiPlayRecord, Favorite as ApiFavorite } from "./api";
 import { storageConfig } from "./storageConfig";
-import Logger from '@/utils/Logger';
+import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('Storage');
 
