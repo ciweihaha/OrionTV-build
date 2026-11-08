@@ -3,7 +3,6 @@ const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
 
 // Find the project and workspace directories
-// eslint-disable-next-line no-undef
 const projectRoot = __dirname;
 
 /** @type {import('expo/metro-config').MetroConfig} */
