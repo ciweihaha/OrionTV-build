@@ -54,13 +54,10 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
     const { cardWidth, cardHeight, spacing } = useResponsiveLayout();
     const [fadeAnim] = useState(new Animated.Value(0));
 
-    const longPressTriggered = useRef(false);
+    const longPressAt = useRef(0);
 
     const handlePress = () => {
-      if (longPressTriggered.current) {
-        longPressTriggered.current = false;
-        return;
-      }
+      if (Date.now() - longPressAt.current < 1000) return;
       
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
@@ -87,7 +84,7 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
     const handleLongPress = () => {
       if (progress === undefined) return;
 
-      longPressTriggered.current = true;
+      longPressAt.current = Date.now();
 
       Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
         {
