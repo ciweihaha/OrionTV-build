@@ -137,6 +137,17 @@ class TCPHttpServer {
 
             // Check if we have a complete HTTP request
             if (requestData.includes('\r\n\r\n')) {
+              // 先看 Content-Length：body 可能还在后面的 TCP 包里（手机 fetch
+              // 分包发送时），没收全就处理会拿到截断的 JSON，远程输入静默失败
+              const headerEndIndex = requestData.indexOf('\r\n\r\n');
+              const headerSection = requestData.slice(0, headerEndIndex);
+              const contentLengthMatch = headerSection.match(/content-length:\s*(\d+)/i);
+              const contentLength = contentLengthMatch ? parseInt(contentLengthMatch[1], 10) : 0;
+              const bodySection = requestData.slice(headerEndIndex + 4);
+              if (new TextEncoder().encode(bodySection).length < contentLength) {
+                return; // 等下一个 data 事件把 body 补齐
+              }
+
               try {
                 const request = this.parseHttpRequest(requestData);
                 if (request && this.requestHandler) {
