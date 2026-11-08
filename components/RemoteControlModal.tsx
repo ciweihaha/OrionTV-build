@@ -7,7 +7,7 @@ import { ThemedText } from "./ThemedText";
 import { StyledButton } from "./StyledButton";
 
 export const RemoteControlModal: React.FC = () => {
-  const { isModalVisible, hideModal, serverUrl, error } = useRemoteControlStore();
+  const { isModalVisible, hideModal, serverUrl, pairingCode, error } = useRemoteControlStore();
 
   return (
     <Modal animationType="fade" transparent={true} visible={isModalVisible} onRequestClose={hideModal}>
@@ -26,6 +26,11 @@ export const RemoteControlModal: React.FC = () => {
           <ThemedText style={styles.instructions}>
             使用手机扫描上方二维码，即可在浏览器中向 TV 发送消息。或者访问{serverUrl}
           </ThemedText>
+          {pairingCode && (
+            <ThemedText style={styles.pairingCode}>
+              配对码：{pairingCode}
+            </ThemedText>
+          )}
           <StyledButton text="关闭" onPress={hideModal} style={styles.button} variant="primary" />
         </ThemedView>
       </View>
@@ -72,9 +77,17 @@ const styles = StyleSheet.create({
   },
   instructions: {
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 12,
     fontSize: 16,
     color: "#ccc",
+  },
+  pairingCode: {
+    textAlign: "center",
+    marginBottom: 24,
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
+    letterSpacing: 4,
   },
   button: {
     width: "100%",
