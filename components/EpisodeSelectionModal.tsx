@@ -4,7 +4,12 @@ import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 
 export const EpisodeSelectionModal: React.FC = () => {
-  const { showEpisodeModal, episodes, currentEpisodeIndex, playEpisode, setShowEpisodeModal } = usePlayerStore();
+  // 按字段订阅：整库订阅会让它跟着每 0.5s 的 status 更新重渲染
+  const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
+  const episodes = usePlayerStore((s) => s.episodes);
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const playEpisode = usePlayerStore((s) => s.playEpisode);
+  const setShowEpisodeModal = usePlayerStore((s) => s.setShowEpisodeModal);
 
   const [episodeGroupSize] = useState(30);
   const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(Math.floor(currentEpisodeIndex / episodeGroupSize));
