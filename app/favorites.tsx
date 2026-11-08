@@ -24,10 +24,11 @@ export default function FavoritesScreen() {
     fetchFavorites();
   }, [fetchFavorites]);
 
-  const renderItem = ({ item }: { item: Favorite & { key: string }; index: number }) => {
+  const renderItem = ({ item, ref }: { item: Favorite & { key: string }; index: number; ref?: React.Ref<any> }) => {
     const [source, id] = item.key.split("+");
     return (
       <VideoCard
+        ref={ref}
         id={id}
         source={source}
         title={item.title}
