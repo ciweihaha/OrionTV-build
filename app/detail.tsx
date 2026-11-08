@@ -230,9 +230,9 @@ export default function DetailScreen() {
                 <ThemedText style={dynamicStyles.metaText}>{detail.type_name}</ThemedText>
               </View>
 
-              <ScrollView style={dynamicStyles.descriptionScrollView}>
-                <ThemedText style={dynamicStyles.description}>{detail.desc}</ThemedText>
-              </ScrollView>
+              {/* 简介直接展开、由外层滚动：原来这里是 150px 高的内层 ScrollView，
+                  电视上它拿不到焦点，简介一长就永远只能看前几行、翻不下去 */}
+              <ThemedText style={dynamicStyles.description}>{detail.desc}</ThemedText>
             </View>
           </View>
 
@@ -355,9 +355,6 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       flex: 1,
       marginLeft: spacing,
       justifyContent: "flex-start",
-    },
-    descriptionScrollView: {
-      height: 150,
     },
 
     // 通用样式
