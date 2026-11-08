@@ -54,7 +54,6 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
   m3uUrl: "",
-  liveStreamSources: [],
   remoteInputEnabled: false,
   autoSkipIntro: true,
   nextEpisodeOverlayEnabled: true,
@@ -104,6 +103,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     })();
     serverConfigPromise = p;
+    // 完成后清掉引用，避免一直捏着一个已完成的 Promise；
+    // 只有仍是本次的才清，防止后一次 fetch 刚开始就被前一次的 finally 误清
+    p.finally(() => {
+      if (serverConfigPromise === p) {
+        serverConfigPromise = null;
+      }
+    });
     return p;
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
