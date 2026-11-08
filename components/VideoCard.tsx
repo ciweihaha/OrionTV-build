@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { TouchableOpacity } from 'react-native';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { API } from '@/services/api';
@@ -28,22 +28,27 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
 /**
  * 响应式VideoCard组件
  * 根据设备类型自动选择合适的VideoCard实现
+ * 用 memo 包一层：列表父组件重渲染时（如 loadingMore 切换、搜索输入），
+ * props 没变的卡片直接跳过重渲染；传入的 props 全是基础类型、
+ * api 单例或 zustand 的稳定回调，浅比较有效。
  */
-const VideoCard = React.forwardRef<any, VideoCardProps>((props, ref) => {
-  const { deviceType } = useResponsiveLayout();
+const VideoCard = memo(
+  React.forwardRef<any, VideoCardProps>((props, ref) => {
+    const { deviceType } = useResponsiveLayout();
 
-  switch (deviceType) {
-    case 'mobile':
-      return <VideoCardMobile {...props} ref={ref} />;
-    
-    case 'tablet':
-      return <VideoCardTablet {...props} ref={ref} />;
-    
-    case 'tv':
-    default:
-      return <VideoCardTV {...props} ref={ref} />;
-  }
-});
+    switch (deviceType) {
+      case 'mobile':
+        return <VideoCardMobile {...props} ref={ref} />;
+
+      case 'tablet':
+        return <VideoCardTablet {...props} ref={ref} />;
+
+      case 'tv':
+      default:
+        return <VideoCardTV {...props} ref={ref} />;
+    }
+  })
+);
 
 VideoCard.displayName = 'VideoCard';
 
