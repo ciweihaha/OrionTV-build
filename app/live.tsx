@@ -49,6 +49,9 @@ export default function LiveScreen() {
   const [favChannels, setFavChannels] = useState<LiveLastChannel[]>([]);
 
   const [currentChannelIndex, setCurrentChannelIndex] = useState(0);
+  /** 重挂 LivePlayer 的序号：选了当前正在播的台时 index 不变，streamUrl 也不变，
+   *  换 key 才能让播放器重新加载（重试坏台） */
+  const [retrySeq, setRetrySeq] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isChannelListVisible, setIsChannelListVisible] = useState(false);
   const [channelTitle, setChannelTitle] = useState<string | null>(null);
@@ -108,11 +111,17 @@ export default function LiveScreen() {
 
   const selectChannelByIndex = useCallback((index: number, list: Channel[]) => {
     if (index < 0 || index >= list.length) return;
+    // 选了当前正在播的台（列表里重选之前失败的台、单频道列表自动跳台）：
+    // index 没变，LivePlayer 的 streamUrl effect 不会重跑，坏台就卡在“加载失败”；
+    // 换 key 重挂播放器才真正重试
+    if (index === currentChannelIndex) {
+      setRetrySeq((s) => s + 1);
+    }
     setCurrentChannelIndex(index);
     failCountRef.current = 0; // 手动换台清零自动跳台计数
     showChannelTitle(list[index].name);
     saveLastChannel(list[index]);
-  }, [saveLastChannel]);
+  }, [saveLastChannel, currentChannelIndex]);
 
   const handleSelectChannel = (channel: Channel) => {
     const globalIndex = channels.findIndex((c) => c.id === channel.id);
@@ -172,23 +181,35 @@ export default function LiveScreen() {
   const toggleFavCurrent = useCallback(async () => {
     const ch = channelsRef.current[currentChannelIndex];
     if (!ch) return;
-    const added = await LiveChannelPrefsManager.toggleFavChannel({ url: ch.url, name: ch.name });
-    setFavChannels(await LiveChannelPrefsManager.getFavChannels());
-    showChannelTitle(`${ch.name}  ${added ? "★ 已收藏" : "已取消收藏"}`);
+    try {
+      const added = await LiveChannelPrefsManager.toggleFavChannel({ url: ch.url, name: ch.name });
+      setFavChannels(await LiveChannelPrefsManager.getFavChannels());
+      showChannelTitle(`${ch.name}  ${added ? "★ 已收藏" : "已取消收藏"}`);
+    } catch {
+      showChannelTitle("收藏失败，请重试");
+    }
   }, [currentChannelIndex]);
 
   const toggleFavChannelItem = useCallback(async (channel: Channel) => {
-    const added = await LiveChannelPrefsManager.toggleFavChannel({ url: channel.url, name: channel.name });
-    const favs = await LiveChannelPrefsManager.getFavChannels();
-    setFavChannels(favs);
-    showChannelTitle(`${channel.name}  ${added ? "★ 已收藏" : "已取消收藏"}`);
+    try {
+      const added = await LiveChannelPrefsManager.toggleFavChannel({ url: channel.url, name: channel.name });
+      const favs = await LiveChannelPrefsManager.getFavChannels();
+      setFavChannels(favs);
+      showChannelTitle(`${channel.name}  ${added ? "★ 已收藏" : "已取消收藏"}`);
+    } catch {
+      showChannelTitle("收藏失败，请重试");
+    }
   }, []);
 
   // 收藏变化 → 重建分组（收藏虚拟组置顶）
   useEffect(() => {
     const groups = buildGroups(channels, favChannels);
     setGroupedChannels(groups);
-    setChannelGroups(Object.keys(groups));
+    const keys = Object.keys(groups);
+    setChannelGroups(keys);
+    // 首次打开列表或当前分组消失时（如取消全部收藏），默认选中第一个分组，
+    // 否则右侧频道列是空的
+    setSelectedGroup((prev) => (prev && groups[prev] ? prev : keys[0] ?? ""));
   }, [channels, favChannels, buildGroups]);
 
   // m3u 加载（V1.5：缓存秒进 + 后台刷新 + 恢复上次频道）
@@ -306,6 +327,7 @@ export default function LiveScreen() {
   const renderLiveContent = () => (
     <>
       <LivePlayer
+        key={retrySeq}
         streamUrl={selectedChannelUrl}
         channelTitle={channelTitle}
         onPlaybackStatusUpdate={handlePlaybackStatus}
