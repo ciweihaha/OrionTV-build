@@ -4,7 +4,7 @@ import { api } from "@/services/api";
 import { LoginCredentialsManager } from "@/services/storage";
 import { useSettingsStore, getServerConfigPromise } from "./settingsStore";
 import Toast from "react-native-toast-message";
-import Logger from "@/utils/Logger";
+import { Logger } from "@/utils/Logger";
 
 const logger = Logger.withTag('AuthStore');
 
