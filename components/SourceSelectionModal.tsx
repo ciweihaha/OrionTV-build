@@ -8,8 +8,15 @@ import { Logger } from '@/utils/Logger';
 const logger = Logger.withTag('SourceSelectionModal');
 
 export const SourceSelectionModal: React.FC = () => {
-  const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
-  const { searchResults, detail, setDetail } = useDetailStore();
+  // 按字段订阅：整库订阅会让它跟着每 0.5s 的 status 更新重渲染
+  const showSourceModal = usePlayerStore((s) => s.showSourceModal);
+  const setShowSourceModal = usePlayerStore((s) => s.setShowSourceModal);
+  const loadVideo = usePlayerStore((s) => s.loadVideo);
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const status = usePlayerStore((s) => s.status);
+  const searchResults = useDetailStore((s) => s.searchResults);
+  const detail = useDetailStore((s) => s.detail);
+  const setDetail = useDetailStore((s) => s.setDetail);
 
   const onSelectSource = (index: number) => {
     logger.debug("onSelectSource", index, searchResults[index].source, detail?.source);
