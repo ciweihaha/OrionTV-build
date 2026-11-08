@@ -90,6 +90,16 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
           emit({ isLoaded: true, isPlaying: player.playing, isBuffering: false, error: undefined });
         } else if (status === 'loading') {
           setIsLoading(true);
+          // 中途卡顿也会回到 loading：重新计时 15 秒，卡住超时同样算坏源、
+          // 交由上层跳台；否则直播中途断流只会一直转圈，永远不报错不跳台
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          timeoutRef.current = setTimeout(() => {
+            setIsTimeout(true);
+            setIsLoading(false);
+            reportErrorOnce(streamUrl);
+          }, PLAYBACK_TIMEOUT);
           emit({ isLoaded: false, isBuffering: true });
         } else if (status === 'error') {
           setIsLoading(false);
