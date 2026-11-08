@@ -75,11 +75,13 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       // 显示/隐藏返回顶部按钮
       setShowScrollToTop(contentOffset.y > 200);
 
-      if (isCloseToBottom && !loadingMore && onEndReached) {
+      // 首屏加载时 loadingMore 是 false（第一页不置该标志）：滚动事件会
+      // 在加载中重复触发 onEndReached，造成同一页重复请求；loading 时也挡住
+      if (isCloseToBottom && !loading && !loadingMore && onEndReached) {
         onEndReached();
       }
     },
-    [onEndReached, loadingMore, loadMoreThreshold]
+    [onEndReached, loading, loadingMore, loadMoreThreshold]
   );
 
   const scrollToTop = () => {
