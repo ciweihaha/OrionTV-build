@@ -151,7 +151,14 @@ export default function SettingsScreen() {
       key: "playback",
     },
     Platform.OS === "android" && {
-      component: <UpdateSection />,
+      component: (
+        <UpdateSection
+          onFocus={() => {
+            setCurrentFocusIndex(4);
+            setCurrentSection("update");
+          }}
+        />
+      ),
       key: "update",
     },
   ] as const; // 把每个对象都当作字面量保留
