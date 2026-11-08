@@ -73,6 +73,10 @@ const useAuthStore = create<AuthState>((set, get) => ({
           });
           if (loginResult && loginResult.ok) {
             set({ isLoggedIn: true });
+          } else if (loginResult) {
+            // 登录接口明确返回不通过（服务器设了密码）：直接弹登录框让用户输密码，
+            // 别悄悄留在未登录状态，等首页请求 401 再弹
+            set({ isLoggedIn: false, isLoginModalVisible: true });
           }
         } else {
           // 非 localstorage：需要账号密码。优先用已保存凭据自动重新登录，
