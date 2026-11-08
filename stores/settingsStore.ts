@@ -105,6 +105,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         if (config) {
           storageConfig.setStorageType(config.StorageType);
           set({ serverConfig: config });
+        } else {
+          // 服务器没返回可用配置（空响应/非法 JSON）：当作拉取失败，
+          // 清掉旧配置，别让上一个服务器的 StorageType 继续生效
+          set({ serverConfig: null });
         }
       } catch (error) {
         if (fetchUrl === api.baseURL) {
