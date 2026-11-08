@@ -24,6 +24,7 @@ export function UpdateModal() {
   const updateButtonRef = React.useRef<ViewInstance>(null);
   const laterButtonRef = React.useRef<ViewInstance>(null);
   const skipButtonRef = React.useRef<ViewInstance>(null);
+  const focusTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function handleUpdate() {
     if (!downloading && !downloadedPath) {
@@ -45,11 +46,18 @@ export function UpdateModal() {
 
   React.useEffect(() => {
     if (showUpdateModal && Platform.isTV) {
-      // TV平台自动聚焦到更新按钮
-      setTimeout(() => {
+      // TV平台自动聚焦到更新按钮；弹窗 100ms 内被关掉时要清掉延时，
+      // 否则会去 focus 一个已卸载的按钮
+      focusTimerRef.current = setTimeout(() => {
         updateButtonRef.current?.focus();
       }, 100);
     }
+    return () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    };
   }, [showUpdateModal]);
 
   const getButtonText = () => {
