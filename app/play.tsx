@@ -221,11 +221,18 @@ export default function PlayScreen() {
 
     if (isLoading) {
       timeoutId = setTimeout(() => {
-        if (usePlayerStore.getState().isLoading) {
+        const state = usePlayerStore.getState();
+        if (!state.isLoading) return;
+        // 20s 还没就绪：当作网络失败走自动换源（与 error 事件共用
+        // handleVideoError 的去重保护，不会和随后到的 error 事件重复切换）
+        const ep = selectCurrentEpisode(state);
+        if (ep?.url) {
+          state.handleVideoError('network', ep.url);
+        } else {
           usePlayerStore.setState({ isLoading: false });
           Toast.show({ type: "error", text1: "播放超时，请重试" });
         }
-      }, 20000); // 20 秒（V1.5：60s 太久，黑屏干等体验差；失败路径已接 handleVideoError 自动换源）
+      }, 20000); // 20 秒（V1.5：60s 太久，黑屏干等体验差）
     }
 
     return () => {
