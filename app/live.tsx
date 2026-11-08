@@ -109,7 +109,7 @@ export default function LiveScreen() {
     LiveChannelPrefsManager.saveLastChannel({ url: channel.url, name: channel.name }).catch(() => {});
   }, []);
 
-  const selectChannelByIndex = useCallback((index: number, list: Channel[]) => {
+  const selectChannelByIndex = useCallback((index: number, list: Channel[], isAutoSkip = false) => {
     if (index < 0 || index >= list.length) return;
     // 选了当前正在播的台（列表里重选之前失败的台、单频道列表自动跳台）：
     // index 没变，LivePlayer 的 streamUrl effect 不会重跑，坏台就卡在“加载失败”；
@@ -118,7 +118,10 @@ export default function LiveScreen() {
       setRetrySeq((s) => s + 1);
     }
     setCurrentChannelIndex(index);
-    failCountRef.current = 0; // 手动换台清零自动跳台计数
+    // 只有手动换台才清零自动跳台计数：自动跳台走同一条路，清零会让
+    // handlePlaybackError 的 MAX_AUTO_SKIP 上限永远到不了——全是坏源时
+    // 无限循环跳台
+    if (!isAutoSkip) failCountRef.current = 0;
     showChannelTitle(list[index].name);
     saveLastChannel(list[index]);
   }, [saveLastChannel, currentChannelIndex]);
@@ -133,14 +136,14 @@ export default function LiveScreen() {
   };
 
   const changeChannel = useCallback(
-    (direction: "next" | "prev") => {
+    (direction: "next" | "prev", isAutoSkip = false) => {
       const list = channelsRef.current;
       if (list.length === 0) return;
       let newIndex =
         direction === "next"
           ? (currentChannelIndex + 1) % list.length
           : (currentChannelIndex - 1 + list.length) % list.length;
-      selectChannelByIndex(newIndex, list);
+      selectChannelByIndex(newIndex, list, isAutoSkip);
     },
     [currentChannelIndex, selectChannelByIndex]
   );
@@ -279,7 +282,7 @@ export default function LiveScreen() {
       return;
     }
     showChannelTitle("信号异常，自动切换下一频道…");
-    changeChannel("next");
+    changeChannel("next", true);
   }, [changeChannel, isChannelListVisible]);
 
   const handlePlaybackStatus = useCallback((status: { isLoaded?: boolean; isPlaying?: boolean }) => {
