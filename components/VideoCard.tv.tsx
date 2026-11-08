@@ -53,7 +53,9 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
     const [isFocused, setIsFocused] = useState(false);
     const [fadeAnim] = useState(new Animated.Value(0));
 
-    const longPressTriggered = useRef(false);
+    // 长按后松手会紧跟着触发一次 onPress：用时间窗挡掉。原来用 sticky 标志，
+    // 点“取消”后标志不清，下一次点卡片会被白白吃掉一次
+    const longPressAt = useRef(0);
 
     const scale = useRef(new Animated.Value(1)).current;
 
@@ -64,10 +66,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
     };
 
     const handlePress = () => {
-      if (longPressTriggered.current) {
-        longPressTriggered.current = false;
-        return;
-      }
+      if (Date.now() - longPressAt.current < 1000) return;
       // 如果有播放进度，直接转到播放页面
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
@@ -114,7 +113,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
       // Only allow long press for items with progress (play records)
       if (progress === undefined) return;
 
-      longPressTriggered.current = true;
+      longPressAt.current = Date.now();
 
       // Show confirmation dialog to delete play record
       Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
