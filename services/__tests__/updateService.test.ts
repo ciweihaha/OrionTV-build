@@ -103,17 +103,17 @@ jest.mock("react-native", () => ({
 
 jest.mock(
   "@/utils/Logger",
-  () => ({
-    __esModule: true,
-    default: {
+  () => {
+    const loggerStub = {
       withTag: () => ({
         debug: jest.fn(),
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
       }),
-    },
-  }),
+    };
+    return { __esModule: true, default: loggerStub, Logger: loggerStub };
+  },
   { virtual: true }
 );
 
@@ -140,7 +140,7 @@ function referenceSha256(data: Uint8Array): string {
 }
 
 describe("UpdateService.sha256OfFile 标准向量", () => {
-  const cases: Array<[string, Uint8Array]> = [
+  const cases: [string, Uint8Array][] = [
     ["空输入", new Uint8Array(0)],
     ["abc", new TextEncoder().encode("abc")],
     ["55 字节（单块填充边界内）", patternBytes(55)],
