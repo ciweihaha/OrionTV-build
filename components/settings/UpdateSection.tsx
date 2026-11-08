@@ -3,7 +3,6 @@ import { View, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import { ThemedText } from "../ThemedText";
 import { StyledButton } from "../StyledButton";
 import { useUpdateStore } from "@/stores/updateStore";
-// import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
 
 export function UpdateSection() {
   const { 
@@ -74,12 +73,6 @@ export function UpdateSection() {
           )}
         </StyledButton>
       </View>
-
-      {/* {UPDATE_CONFIG.AUTO_CHECK && (
-        <ThemedText style={styles.hint}>
-          自动检查更新已开启，每{UPDATE_CONFIG.CHECK_INTERVAL / (60 * 60 * 1000)}小时检查一次
-        </ThemedText>
-      )} */}
     </View>
   );
 }
