@@ -380,7 +380,8 @@ export class M3uCacheManager {
     try {
       const keys = await AsyncStorage.getAllKeys();
       const m3uKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.M3U_CACHE_PREFIX));
-      if (m3uKeys.length > 0) await AsyncStorage.multiRemove(m3uKeys);
+      // AsyncStorage 3.x 已移除 multiRemove，改用 removeItem 逐个删除
+      if (m3uKeys.length > 0) await Promise.all(m3uKeys.map((k) => AsyncStorage.removeItem(k)));
     } catch (error) {
       logger.info("Failed to clear m3u cache:", error);
     }
