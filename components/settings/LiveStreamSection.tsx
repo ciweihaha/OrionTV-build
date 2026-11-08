@@ -1,5 +1,5 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef } from "react";
-import { View, TextInput, StyleSheet, Animated, Platform , useTVEventHandler } from "react-native";
+import { View, TextInput, StyleSheet, Animated , useTVEventHandler } from "react-native";
 import type { TextInputInstance } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
@@ -82,7 +82,7 @@ export const LiveStreamSection = forwardRef<LiveStreamSectionRef, LiveStreamSect
 
     return (
       <SettingsSection focusable onFocus={handleSectionFocus} onBlur={handleSectionBlur}
-        onPress={Platform.isTV || deviceType !== 'tv' ? undefined : handlePress}
+        onPress={deviceType === 'tv' ? undefined : handlePress}
       >
         <View style={styles.inputContainer}>
           <View style={styles.titleContainer}>
