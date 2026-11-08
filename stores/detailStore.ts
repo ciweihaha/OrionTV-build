@@ -149,7 +149,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
           logger.info(`[PERF] FALLBACK search (all sources) START - query: "${q}"`);
           
           try {
-            const { results: allResults } = await api.searchVideos(q);
+            const { results: allResults } = await api.searchVideos(q, signal);
             const fallbackEnd = performance.now();
             logger.info(`[PERF] FALLBACK search END - took ${(fallbackEnd - fallbackStart).toFixed(2)}ms, total results: ${allResults.length}`);
             
@@ -168,6 +168,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
               });
             }
           } catch (fallbackError) {
+            // 被取消（换详情/离开页面）不算失败：不写 error 状态
+            if (signal.aborted || (fallbackError instanceof Error && fallbackError.name === "AbortError")) return;
             logger.error(`[ERROR] FALLBACK search FAILED:`, fallbackError);
             set({ 
               error: `搜索失败：${fallbackError instanceof Error ? fallbackError.message : '网络错误，请稍后重试'}`,
@@ -182,7 +184,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
           logger.info(`[PERF] API searchVideos (background) START`);
           
           try {
-            const { results: allResults } = await api.searchVideos(q);
+            const { results: allResults } = await api.searchVideos(q, signal);
             
             const searchAllEnd = performance.now();
             logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${allResults.length}`);
@@ -190,6 +192,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
             if (signal.aborted) return;
             await processAndSetResults(allResults.filter(item => item.title === q), true);
           } catch (backgroundError) {
+            // 被取消不算失败，也不记警告日志
+            if (signal.aborted || (backgroundError instanceof Error && backgroundError.name === "AbortError")) return;
             logger.warn(`[WARN] Background search failed, but preferred source already succeeded:`, backgroundError);
           }
         }
