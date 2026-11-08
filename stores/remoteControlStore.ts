@@ -25,6 +25,9 @@ interface RemoteControlState {
   showModal: (targetPage?: string) => void;
   hideModal: () => void;
   lastMessage: string | null;
+  /** 收到上一条远程消息的时间戳：消息内容本身不再拼时间戳后缀，
+   * 连续发两次相同内容时靠这个字段让订阅方感知到变化 */
+  lastMessageAt: number | null;
   targetPage: string | null;
   setMessage: (message: string, targetPage?: string) => void;
   clearMessage: () => void;
@@ -37,6 +40,7 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
   error: null,
   isModalVisible: false,
   lastMessage: null,
+  lastMessageAt: null,
   targetPage: null,
 
   startServer: async () => {
@@ -52,7 +56,7 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
           logger.debug('Received message:', message);
           const currentState = get();
           // Use the current targetPage from the store
-          set({ lastMessage: message, targetPage: currentState.targetPage });
+          set({ lastMessage: message, lastMessageAt: Date.now(), targetPage: currentState.targetPage });
         },
         onHandshake: () => {
           logger.debug('Handshake successful');
@@ -99,10 +103,10 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
   hideModal: () => set({ isModalVisible: false, targetPage: null }),
 
   setMessage: (message: string, targetPage?: string) => {
-    set({ lastMessage: `${message}_${Date.now()}`, targetPage });
+    set({ lastMessage: message, lastMessageAt: Date.now(), targetPage });
   },
 
   clearMessage: () => {
-    set({ lastMessage: null, targetPage: null });
+    set({ lastMessage: null, lastMessageAt: null, targetPage: null });
   },
 }));
