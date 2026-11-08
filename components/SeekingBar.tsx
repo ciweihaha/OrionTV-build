@@ -20,7 +20,10 @@ const formatTime = (milliseconds: number) => {
 };
 
 export const SeekingBar = () => {
-  const { isSeeking, seekPosition, status } = usePlayerStore();
+  // 按字段订阅：timeUpdate 每 0.5s 写 status，整库订阅会让它跟着无关字段变化重渲染
+  const isSeeking = usePlayerStore((s) => s.isSeeking);
+  const seekPosition = usePlayerStore((s) => s.seekPosition);
+  const status = usePlayerStore((s) => s.status);
 
   if (!isSeeking || !status?.isLoaded) {
     return null;
