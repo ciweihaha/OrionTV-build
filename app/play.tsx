@@ -107,6 +107,12 @@ export default function PlayScreen() {
   // 播放页本身不用 status/progressPosition（进度条在 SeekingBar 里），只订阅用到的字段。
   const isLoading = usePlayerStore((s) => s.isLoading);
   const showControls = usePlayerStore((s) => s.showControls);
+  const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
+  const showSourceModal = usePlayerStore((s) => s.showSourceModal);
+  const showSpeedModal = usePlayerStore((s) => s.showSpeedModal);
+  const setShowEpisodeModal = usePlayerStore((s) => s.setShowEpisodeModal);
+  const setShowSourceModal = usePlayerStore((s) => s.setShowSourceModal);
+  const setShowSpeedModal = usePlayerStore((s) => s.setShowSpeedModal);
   const showNextEpisodeOverlay = usePlayerStore((s) => s.showNextEpisodeOverlay);
   const episodes = usePlayerStore((s) => s.episodes);
   const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
@@ -203,6 +209,21 @@ export default function PlayScreen() {
 
   useEffect(() => {
     const backAction = () => {
+      // 弹窗最先响应返回键：电视端没有触摸，返回键是关弹窗的快捷方式；
+      // 之前直接走到隐藏控制条/退出播放，弹窗只能用焦点移到关闭按钮，
+      // 按两次返回就直接退出了播放页
+      if (showEpisodeModal) {
+        setShowEpisodeModal(false);
+        return true;
+      }
+      if (showSourceModal) {
+        setShowSourceModal(false);
+        return true;
+      }
+      if (showSpeedModal) {
+        setShowSpeedModal(false);
+        return true;
+      }
       if (showControls) {
         setShowControls(false);
         return true;
@@ -214,7 +235,7 @@ export default function PlayScreen() {
     const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
 
     return () => backHandler.remove();
-  }, [showControls, setShowControls, router]);
+  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, router]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
