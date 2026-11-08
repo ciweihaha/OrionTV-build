@@ -622,6 +622,9 @@ export class API {
       } catch (e) {
         // 超时(AbortError)/网络失败(TypeError)/读取异常：链路性质错误，重试
         lastError = e;
+        // 熔断已开时别重试：重试还是在 readJsonLimited 里立即抛出来，
+        // 只会白白多发两次请求、多等两秒
+        if (e instanceof Error && e.message.startsWith("BODY_TIMEOUT_BREAKER_OPEN")) throw e;
         // 4xx 是请求自身问题（参数错、资源不存在），重试也没用，直接抛
         const httpStatus = (e as { httpStatus?: number } | null)?.httpStatus;
         if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) throw e;
@@ -637,7 +640,11 @@ export class API {
   async searchVideos(query: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
     const url = `/api/search?q=${encodeURIComponent(query)}`;
     const response = await this._fetch(url, { signal }, API.SEARCH_TIMEOUT);
-    return this.readJsonLimited(response, API.SEARCH_TIMEOUT, signal, "search");
+    const data = await this.readJsonLimited(response, API.SEARCH_TIMEOUT, signal, "search");
+    // 服务端异常时可能返回不含 results 的对象：调用方直接 .length 会抛 TypeError，
+    // 只能看到一条无意义的错误；缺字段就当空结果（与 searchVideo 第 44 轮同处修法）
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return { results };
   }
 
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
