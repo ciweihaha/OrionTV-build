@@ -447,11 +447,20 @@ export class API {
   }
 
   async logout(): Promise<{ ok: boolean }> {
-    const response = await this._fetch("/api/logout", {
-      method: "POST",
-    });
-    await AsyncStorage.setItem("authCookies", '');
-    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "logout");
+    try {
+      const response = await this._fetch("/api/logout", {
+        method: "POST",
+      });
+      return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "logout");
+    } finally {
+      // 本地登录标记必须无条件清除：远程登出失败（离线/超时）也不能留下，
+      // 否则下次冷启动会拿着旧标记直接当已登录，等于没有退出
+      try {
+        await AsyncStorage.setItem("authCookies", '');
+      } catch {
+        // 标记清除失败不阻断退出流程
+      }
+    }
   }
 
   async getServerConfig(): Promise<ServerConfig> {
