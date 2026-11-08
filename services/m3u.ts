@@ -14,6 +14,9 @@ export interface Channel {
 
 const parseM3U = (m3uText: string): Channel[] => {
   const parsedChannels: Channel[] = [];
+  // 同一个流地址在列表里出现多次时只留第一条：重复行会让直播列表出现
+  // 完全相同的两个频道（数字换台、收藏比对都按 URL 来，也会跟着错乱）
+  const seenUrls = new Set<string>();
   const lines = m3uText.split('\n');
   let currentChannelInfo: Partial<Channel> | null = null;
 
@@ -38,6 +41,11 @@ const parseM3U = (m3uText: string): Channel[] => {
       }
     } else if (currentChannelInfo && trimmedLine && !trimmedLine.startsWith('#') && trimmedLine.includes('://')) {
       currentChannelInfo.url = trimmedLine;
+      if (seenUrls.has(currentChannelInfo.url)) {
+        currentChannelInfo = null; // 重复地址：丢弃这一条
+        continue;
+      }
+      seenUrls.add(currentChannelInfo.url);
       currentChannelInfo.id = currentChannelInfo.url; // Use URL as ID
       
       // Ensure all required fields are present, providing defaults if necessary
