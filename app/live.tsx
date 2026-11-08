@@ -171,7 +171,10 @@ export default function LiveScreen() {
     // 唯一匹配立即切换：存在该号且不存在以它为前缀的更大号（如输入 5 但列表有 50+）
     const n = parseInt(next, 10);
     const list = channelsRef.current;
-    const hasLonger = !isNaN(n) && list.length >= (n + 1) * 10;
+    // 以 n 为前缀的最小更大号是 n*10（如 5 → 50）：列表长度达到它才说明可能存在，
+    // 原来用 (n+1)*10 高了一个量级——列表 55 个台时输 5 会直接切到 5 台，
+    // 再也输不出 50-55
+    const hasLonger = !isNaN(n) && list.length >= n * 10;
     if (!isNaN(n) && n >= 1 && n <= list.length && !hasLonger) {
       commitDigits();
       return;
