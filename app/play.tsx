@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useKeepAwake } from "expo-keep-awake";
 import { ThemedView } from "@/components/ThemedView";
+import { ThemedText } from "@/components/ThemedText";
 import { PlayerControls } from "@/components/PlayerControls";
 import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
@@ -99,6 +100,7 @@ export default function PlayScreen() {
     : rawPosition;
 
   const detail = useDetailStore((s) => s.detail);
+  const detailError = useDetailStore((s) => s.error);
   const source = sourceStr || detail?.source;
   const id = videoId || detail?.id.toString();
   const title = videoTitle || detail?.title;
@@ -262,6 +264,23 @@ export default function PlayScreen() {
       }
     };
   }, [isLoading]);
+
+  if (!detail && detailError) {
+    // 详情加载失败：之前无条件转圈，续播直达播放页时 detail 为 null、
+    // DetailStore 已有 error 也会一直转下去；显示错误文案，返回键已接管退出
+    return (
+      <ThemedView focusable style={dynamicStyles.container}>
+        <View style={dynamicStyles.loadingContainer}>
+          <ThemedText type="subtitle" style={{ textAlign: "center" }}>
+            {detailError}
+          </ThemedText>
+          <ThemedText style={{ marginTop: 16, textAlign: "center" }}>
+            按返回键退出
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   if (!detail) {
     return <VideoLoadingAnimation showProgressBar />;
