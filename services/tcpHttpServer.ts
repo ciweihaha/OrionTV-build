@@ -1,6 +1,7 @@
 import TcpSocket from 'react-native-tcp-socket';
 import NetInfo from '@react-native-community/netinfo';
 import { Logger } from '@/utils/Logger';
+import { utf8ByteLength } from '@/utils/utf8ByteLength';
 
 const logger = Logger.withTag('TCPHttpServer');
 
@@ -79,7 +80,9 @@ class TCPHttpServer {
 
     const statusText = statusTexts[response.statusCode] || 'Unknown';
     const headers = {
-      'Content-Length': new TextEncoder().encode(response.body).length.toString(),
+      // 不用 TextEncoder：部分 Hermes 环境没有它，GET / 配对页一打开就抛错，
+      // catch 里回 500 又调同一个方法再抛一次、无人接，直接闪退。改走手写计数。
+      'Content-Length': utf8ByteLength(response.body).toString(),
       'Connection': 'close',
       ...response.headers
     };
@@ -94,6 +97,24 @@ class TCPHttpServer {
     httpResponse += response.body;
 
     return httpResponse;
+  }
+
+  /** socket.write 失败（对端已断开等）绝不能抛回 data 回调，否则闪退 */
+  private safeWrite(socket: TcpSocket.Socket, text: string): void {
+    try {
+      socket.write(text);
+    } catch (error) {
+      logger.error('[TCPHttpServer] Failed to write response:', error);
+    }
+  }
+
+  /** socket.end 同上，失败只记日志 */
+  private safeEnd(socket: TcpSocket.Socket): void {
+    try {
+      socket.end();
+    } catch (error) {
+      logger.error('[TCPHttpServer] Failed to end socket:', error);
+    }
   }
 
   public setRequestHandler(handler: RequestHandler) {
@@ -130,56 +151,65 @@ class TCPHttpServer {
           // 请求体上限 1MB，防恶意客户端无限发送耗尽内存
           const MAX_REQUEST_BYTES = 1024 * 1024;
           socket.on('data', async (data: string | Buffer) => {
-            const chunk = data.toString();
-            requestData += chunk;
-            requestByteLength += new TextEncoder().encode(chunk).length;
-            if (requestByteLength > MAX_REQUEST_BYTES) {
-              logger.error('[TCPHttpServer] Request too large, closing connection');
-              socket.end();
-              requestData = '';
-              requestByteLength = 0;
-              return;
-            }
-
-            // Check if we have a complete HTTP request
-            if (requestData.includes('\r\n\r\n')) {
-              // 先看 Content-Length：body 可能还在后面的 TCP 包里（手机 fetch
-              // 分包发送时），没收全就处理会拿到截断的 JSON，远程输入静默失败
-              const headerEndIndex = requestData.indexOf('\r\n\r\n');
-              const headerSection = requestData.slice(0, headerEndIndex);
-              const contentLengthMatch = headerSection.match(/content-length:\s*(\d+)/i);
-              const contentLength = contentLengthMatch ? parseInt(contentLengthMatch[1], 10) : 0;
-              const bodySection = requestData.slice(headerEndIndex + 4);
-              if (new TextEncoder().encode(bodySection).length < contentLength) {
-                return; // 等下一个 data 事件把 body 补齐
+            // 整段包 try/catch：data 回调是 async，里面任何未接异常
+            // （包括 TextEncoder 缺失、socket 异常）在 Hermes 里都会直接闪退。
+            // 此前 TextEncoder 的三处调用都在内层 try 之外，GET / 配对页一打开就崩。
+            try {
+              const chunk = data.toString();
+              requestData += chunk;
+              requestByteLength += utf8ByteLength(chunk);
+              if (requestByteLength > MAX_REQUEST_BYTES) {
+                logger.error('[TCPHttpServer] Request too large, closing connection');
+                this.safeEnd(socket);
+                requestData = '';
+                requestByteLength = 0;
+                return;
               }
 
-              try {
-                const request = this.parseHttpRequest(requestData);
-                if (request && this.requestHandler) {
-                  const response = await this.requestHandler(request);
-                  const httpResponse = this.formatHttpResponse(response);
-                  socket.write(httpResponse);
-                } else {
-                  // Send 400 Bad Request for malformed requests
-                  const errorResponse = this.formatHttpResponse({
-                    statusCode: 400,
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: 'Bad Request'
-                  });
-                  socket.write(errorResponse);
+              // Check if we have a complete HTTP request
+              if (requestData.includes('\r\n\r\n')) {
+                // 先看 Content-Length：body 可能还在后面的 TCP 包里（手机 fetch
+                // 分包发送时），没收全就处理会拿到截断的 JSON，远程输入静默失败
+                const headerEndIndex = requestData.indexOf('\r\n\r\n');
+                const headerSection = requestData.slice(0, headerEndIndex);
+                const contentLengthMatch = headerSection.match(/content-length:\s*(\d+)/i);
+                const contentLength = contentLengthMatch ? parseInt(contentLengthMatch[1], 10) : 0;
+                const bodySection = requestData.slice(headerEndIndex + 4);
+                if (utf8ByteLength(bodySection) < contentLength) {
+                  return; // 等下一个 data 事件把 body 补齐
                 }
-              } catch (error) {
-                logger.error('[TCPHttpServer] Error handling request:', error);
-                const errorResponse = this.formatHttpResponse({
-                  statusCode: 500,
-                  headers: { 'Content-Type': 'text/plain' },
-                  body: 'Internal Server Error'
-                });
-                socket.write(errorResponse);
+
+                try {
+                  const request = this.parseHttpRequest(requestData);
+                  if (request && this.requestHandler) {
+                    const response = await this.requestHandler(request);
+                    this.safeWrite(socket, this.formatHttpResponse(response));
+                  } else {
+                    // Send 400 Bad Request for malformed requests
+                    this.safeWrite(socket, this.formatHttpResponse({
+                      statusCode: 400,
+                      headers: { 'Content-Type': 'text/plain' },
+                      body: 'Bad Request'
+                    }));
+                  }
+                } catch (error) {
+                  logger.error('[TCPHttpServer] Error handling request:', error);
+                  // 500 路径再包一层：formatHttpResponse 自身已不再抛错，
+                  // 但二次失败也绝不能逃出回调
+                  this.safeWrite(socket, this.formatHttpResponse({
+                    statusCode: 500,
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: 'Internal Server Error'
+                  }));
+                }
+
+                this.safeEnd(socket);
+                requestData = '';
+                requestByteLength = 0;
               }
-              
-              socket.end();
+            } catch (error) {
+              logger.error('[TCPHttpServer] Unexpected error in data handler:', error);
+              this.safeEnd(socket);
               requestData = '';
               requestByteLength = 0;
             }
