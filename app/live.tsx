@@ -309,11 +309,18 @@ export default function LiveScreen() {
         toggleFavCurrent();
         return;
       }
+      // 失败页重试：当前台失败过且之后没成功过（failCount 未清零）时，
+      // OK 键重选当前台（同台换 key 重挂播放器）；平时 OK 键在直播页无动作。
+      // 方向键走全局换台/开列表，焦点抢不到重试按钮，单靠按钮电视上点不到。
+      if (t === "select" && failCountRef.current > 0) {
+        selectChannelByIndex(currentChannelIndex, channels);
+        return;
+      }
       if (t === "down") setIsChannelListVisible(true);
       else if (t === "left") changeChannel("prev");
       else if (t === "right") changeChannel("next");
     },
-    [changeChannel, isChannelListVisible, deviceType, handleDigit, toggleFavCurrent]
+    [changeChannel, isChannelListVisible, deviceType, handleDigit, toggleFavCurrent, selectChannelByIndex, currentChannelIndex, channels]
   );
 
   useTVEventHandler(deviceType === 'tv' ? handleTVEvent : () => {});
@@ -338,6 +345,7 @@ export default function LiveScreen() {
         channelTitle={channelTitle}
         onPlaybackStatusUpdate={handlePlaybackStatus}
         onPlaybackError={handlePlaybackError}
+        onRetry={() => selectChannelByIndex(currentChannelIndex, channels)}
       />
       <Modal
         animationType="slide"

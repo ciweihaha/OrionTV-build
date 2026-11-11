@@ -3,6 +3,7 @@ import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useKeepAwake } from "expo-keep-awake";
 import type { PlaybackStatus } from "@/stores/playerStore";
+import { StyledButton } from "@/components/StyledButton";
 
 interface LivePlayerProps {
   streamUrl: string | null;
@@ -10,11 +11,13 @@ interface LivePlayerProps {
   onPlaybackStatusUpdate: (status: PlaybackStatus) => void;
   /** V1.5：流加载失败/超时回调（每个 streamUrl 最多触发一次），供上层自动跳台 */
   onPlaybackError?: () => void;
+  /** 失败页手动重试：上层重选当前频道（同台时换 key 重挂播放器） */
+  onRetry?: () => void;
 }
 
 const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 
-export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onPlaybackError }: LivePlayerProps) {
+export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onPlaybackError, onRetry }: LivePlayerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -142,6 +145,11 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
     return (
       <View style={styles.container}>
         <Text style={styles.messageText}>加载失败，请重试</Text>
+        {/* 之前只有一句“请重试”，没有任何可点的重试入口：自动跳台耗尽后
+            只能凭提示 toast 摸索左右键换台；给一个可聚焦的重试按钮 */}
+        {onRetry && (
+          <StyledButton text="重试" onPress={onRetry} style={styles.retryButton} />
+        )}
       </View>
     );
   }
@@ -196,6 +204,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     marginTop: 10,
+  },
+  retryButton: {
+    marginTop: 24,
+    minWidth: 160,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
