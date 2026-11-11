@@ -4,6 +4,7 @@ import { isPictureInPictureSupported } from "expo-video";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { Colors } from "@/constants/Colors";
 
 interface PlaybackSectionProps {
@@ -36,6 +37,7 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     setBackgroundPlayback,
   } = useSettingsStore();
   const [focusedKey, setFocusedKey] = useState<PlaybackToggleKey | null>(null);
+  const deviceType = useResponsiveLayout().deviceType;
 
   // 画中画是否受当前设备支持（不支持时开关只控制后台音频，优雅降级）。
   const pipSupported = useMemo(() => {
@@ -92,8 +94,12 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     onChanged();
   };
 
+  // TV 下外层 SettingsSection 不可聚焦：外层 Pressable 一旦可聚焦就会抢走焦点，
+  // 内层 4 行开关永远拿不到焦点、onPress 永远不触发（第 58 轮远程输入行同款问题），
+  // 电视上后台播放/画中画就点不动。非 TV 保持原样（触摸不走焦点）。
+  // 行聚焦时同步通知页面（外层不再聚焦，section 级 onFocus 在 TV 下不会触发）。
   return (
-    <SettingsSection focusable onFocus={onFocus} onBlur={onBlur}>
+    <SettingsSection focusable={deviceType !== "tv"} onFocus={onFocus} onBlur={onBlur}>
       <ThemedText style={styles.sectionTitle}>播放设置</ThemedText>
 
       {toggles.map((toggle) => {
@@ -101,9 +107,8 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
         return (
           <Pressable
             key={toggle.key}
-            hasTVPreferredFocus={isFocused}
             style={[styles.settingItem, isFocused && styles.settingItemFocused]}
-            onFocus={() => setFocusedKey(toggle.key)}
+            onFocus={() => { setFocusedKey(toggle.key); onFocus?.(); }}
             onBlur={() => setFocusedKey(null)}
             onPress={() => handleToggle(toggle.key)}
           >
