@@ -47,7 +47,11 @@ export const getResolutionFromM3U8 = async (
     return cachedEntry.resolution;
   }
 
-  if (!url.toLowerCase().endsWith(".m3u8")) {
+  // 先剥掉查询串/片段再判后缀：带签名的播放地址（如 xxx.m3u8?token=...）
+  // 也是 m3u8，直接 endsWith 会误判为非 m3u8、跳过清晰度检测，详情页该源
+  // 就一直没有清晰度角标；fetch 仍用原地址，签名参数不受影响
+  const pathPart = url.trim().split(/[?#]/, 1)[0];
+  if (!pathPart.toLowerCase().endsWith(".m3u8")) {
     logger.info(`[PERF] M3U8 resolution detection SKIPPED - not M3U8 file`);
     return null;
   }
