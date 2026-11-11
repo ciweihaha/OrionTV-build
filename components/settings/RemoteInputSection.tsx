@@ -45,9 +45,18 @@ export const RemoteInputSection: React.FC<RemoteInputSectionProps> = ({ onChange
   }
 
   // TV遥控器事件处理
+  // 只响应松键（eventKeyAction === 1）：原生层对 DPAD_CENTER/ENTER 在
+  // ACTION_DOWN 与 ACTION_UP 各发一次 select（ReactAndroidHWInputDeviceHelper），
+  // 不守会一次按键切换两次、开关净值不变，看起来就是“按了没反应、关不掉”，
+  // 还会让服务器每按一次就停启一轮、重启撞上端口未释放就直接报启动失败。
+  // 仓库里 useTVRemoteHandler 的长按收尾就是这么守松键的。
   const handleTVEvent = React.useCallback(
     (event: any) => {
       if (isFocused && event.eventType === "select") {
+        const keyAction = Number(event.eventKeyAction);
+        if (!Number.isNaN(keyAction) && keyAction !== 1) {
+          return; // 按下那次不处理，只处理松键那次
+        }
         handleToggle(!remoteInputEnabled);
       }
     },
