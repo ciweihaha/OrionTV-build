@@ -104,6 +104,19 @@ export const useTVRemoteHandler = () => {
         return;
       }
 
+      // 离散按键只响应松键（eventKeyAction === 1）：原生层对同一按键在
+      // ACTION_DOWN 与 ACTION_UP 各发一次事件（第 97 轮远程输入开关同款问题），
+      // 左/右快进不守会一次按键 seek 两次、20 秒一步变成 40 秒；select 原来
+      // 靠控制条弹出后的门控碰巧挡住第二次，时序一抖就双切、播放暂停看起来失灵。
+      // 长按快进（longLeft/longRight）本身就分按下开始、松键停止两条边，
+      // 不在此守，留在下面各分支里按 eventKeyAction 区分。
+      if (event.eventType !== "longLeft" && event.eventType !== "longRight") {
+        const keyAction = Number(event.eventKeyAction);
+        if (!Number.isNaN(keyAction) && keyAction !== 1) {
+          return; // 按下那次不处理，只处理松键那次
+        }
+      }
+
       switch (event.eventType) {
         case "select":
           togglePlayPause();
