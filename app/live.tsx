@@ -305,6 +305,14 @@ export default function LiveScreen() {
         handleDigit(digit);
         return;
       }
+      // 以下离散按键只响应松键（eventKeyAction === 1）：原生层对同一按键在
+      // ACTION_DOWN 与 ACTION_UP 各发一次事件（第 97 轮），不守会一次按键执行两次——
+      // 左右换台一次连跳两台、菜单收藏刚加上就又被取消。数字键分支在上面已先行
+      // 返回，不受这条守卫影响。
+      const keyAction = Number(event.eventKeyAction);
+      if (!Number.isNaN(keyAction) && keyAction !== 1) {
+        return; // 按下那次不处理，只处理松键那次
+      }
       if (t === "menu") {
         toggleFavCurrent();
         return;
