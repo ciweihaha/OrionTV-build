@@ -169,7 +169,10 @@ export class FavoriteManager {
         return {};
       }
     }
-    return (await api.getFavorites()) as Record<string, Favorite>;
+    // 服务端空收藏可能返回 null：直接返回会让调用方 Object.entries(null) 抛错，
+    // 收藏页变错误态；空对象才是“无收藏”的正确表示。
+    const data = await api.getFavorites();
+    return (data as Record<string, Favorite> | null) ?? {};
   }
 
   static async save(source: string, id: string, item: Favorite): Promise<void> {
@@ -275,7 +278,7 @@ export class PlayRecordManager {
       const apiStart = performance.now();
       logger.info(`[PERF] API getPlayRecords START`);
       
-      apiRecords = await api.getPlayRecords();
+      apiRecords = (await api.getPlayRecords()) ?? {};
       
       const apiEnd = performance.now();
       logger.info(`[PERF] API getPlayRecords END - took ${(apiEnd - apiStart).toFixed(2)}ms, records: ${Object.keys(apiRecords).length}`);
@@ -390,7 +393,9 @@ export class SearchHistoryManager {
         return [];
       }
     }
-    return api.getSearchHistory();
+    // 服务端空历史可能返回 null：直接返回会让调用方 setSearchHistory(null)，
+    // 搜索页渲染 searchHistory.map 时白屏；空数组才是“无历史”的正确表示。
+    return (await api.getSearchHistory()) ?? [];
   }
 
   static async add(keyword: string): Promise<void> {
