@@ -169,9 +169,16 @@ export default function SettingsScreen() {
 
 
   // TV遥控器事件处理 - 仅在TV设备上启用
+  // 只响应松键（eventKeyAction === 1）：原生层对同一方向键在 ACTION_DOWN 与
+  // ACTION_UP 各发一次事件（第 97 轮），不守会一次下键 index 走两步——从播放设置
+  // 按一下下键就直接跳过“更新”把焦点抢到保存按钮上。
   const handleTVEvent = React.useCallback(
     (event: any) => {
       if (deviceType !== "tv") return;
+      const keyAction = Number(event.eventKeyAction);
+      if (!Number.isNaN(keyAction) && keyAction !== 1) {
+        return; // 按下那次不处理，只处理松键那次
+      }
 
       if (event.eventType === "down") {
         const nextIndex = Math.min(currentFocusIndex + 1, sections.length);
