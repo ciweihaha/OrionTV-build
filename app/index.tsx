@@ -259,9 +259,12 @@ export default function HomeScreen() {
       marginBottom: spacing,
     },
     headerTitle: {
-      fontSize: deviceType === "mobile" ? 24 : deviceType === "tablet" ? 28 : 32,
+      // TV 下原来 32 号加粗：首页/直播两个 tab 占满顶栏、字往下顶 16px 后
+      // 挤到下面的分类行，看着像遮挡。改 24 号、去掉 TV 的上偏移，
+      // 仍比分类文字（16 号）大一级，层级还在。
+      fontSize: deviceType === "mobile" ? 24 : deviceType === "tablet" ? 28 : 24,
       fontWeight: "bold",
-      paddingTop: 16,
+      paddingTop: deviceType === "tv" ? 0 : 16,
     },
     rightHeaderButtons: {
       flexDirection: "row",
