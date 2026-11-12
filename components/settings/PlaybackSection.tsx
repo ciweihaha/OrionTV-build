@@ -4,6 +4,7 @@ import { isPictureInPictureSupported } from "expo-video";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { INTRO_SKIP_OPTIONS } from "@/utils/introSkip";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { Colors } from "@/constants/Colors";
 
@@ -19,6 +20,10 @@ type PlaybackToggleKey =
   | "incognitoMode"
   | "backgroundPlayback";
 
+/** 除开关外的可聚焦行：片头时长（点按循环切换档位） */
+type PlaybackOptionKey = "introSkipSeconds";
+type PlaybackFocusKey = PlaybackToggleKey | PlaybackOptionKey;
+
 /**
  * 播放设置：下一集预告 / 自动跳过片头 / 无痕模式 / 后台播放与画中画。
  * 行交互同时兼容触摸与电视遥控：整行是 Pressable（点按即切换），
@@ -31,12 +36,14 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     setNextEpisodeOverlayEnabled,
     autoSkipIntro,
     setAutoSkipIntro,
+    introSkipSeconds,
+    setIntroSkipSeconds,
     incognitoMode,
     setIncognitoMode,
     backgroundPlayback,
     setBackgroundPlayback,
   } = useSettingsStore();
-  const [focusedKey, setFocusedKey] = useState<PlaybackToggleKey | null>(null);
+  const [focusedKey, setFocusedKey] = useState<PlaybackFocusKey | null>(null);
   const deviceType = useResponsiveLayout().deviceType;
 
   // 画中画是否受当前设备支持（不支持时开关只控制后台音频，优雅降级）。
@@ -65,7 +72,7 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     {
       key: "autoSkipIntro",
       name: "自动跳过片头",
-      description: "播放到片头结束处自动跳过",
+      description: "播放到片头结束处自动跳过；没标过片头时间时按下面“片头时长”跳",
       value: autoSkipIntro,
       setValue: setAutoSkipIntro,
     },
@@ -93,6 +100,15 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     toggle.setValue(!toggle.value);
     onChanged();
   };
+
+  // 片头时长：点按循环切换档位（0=不跳，只用手动标记的片头时间）
+  const handleIntroSkipSeconds = () => {
+    const idx = INTRO_SKIP_OPTIONS.indexOf(introSkipSeconds as (typeof INTRO_SKIP_OPTIONS)[number]);
+    const next = INTRO_SKIP_OPTIONS[(idx + 1) % INTRO_SKIP_OPTIONS.length];
+    setIntroSkipSeconds(next);
+    onChanged();
+  };
+  const introSkipLabel = introSkipSeconds === 0 ? "不跳过" : `${introSkipSeconds}秒`;
 
   // TV 下外层 SettingsSection 不可聚焦：外层 Pressable 一旦可聚焦就会抢走焦点，
   // 内层 4 行开关永远拿不到焦点、onPress 永远不触发（第 58 轮远程输入行同款问题），
@@ -132,6 +148,21 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
           </Pressable>
         );
       })}
+      {/* 片头时长：没标过片头时间时按这个时长跳；0=不跳，只认手动标记 */}
+      <Pressable
+        onFocus={() => { setFocusedKey("introSkipSeconds"); onFocus?.(); }}
+        onBlur={() => setFocusedKey(null)}
+        onPress={handleIntroSkipSeconds}
+        style={[styles.settingItem, focusedKey === "introSkipSeconds" && styles.settingItemFocused]}
+      >
+        <View style={styles.settingInfo}>
+          <ThemedText style={styles.settingName}>片头时长</ThemedText>
+          <ThemedText style={styles.settingDescription}>
+            没标过片头时间时，按这个时长跳过片头
+          </ThemedText>
+        </View>
+        <ThemedText style={styles.introSkipValue}>{introSkipLabel}</ThemedText>
+      </Pressable>
     </SettingsSection>
   );
 };
@@ -174,5 +205,10 @@ const styles = StyleSheet.create({
   },
   statusValue: {
     fontSize: 14,
+  },
+  introSkipValue: {
+    fontSize: 16,
+    color: Colors.dark.primary,
+    fontWeight: "600",
   },
 });

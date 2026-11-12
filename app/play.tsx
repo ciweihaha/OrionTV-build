@@ -19,6 +19,7 @@ import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useVideoHandlers } from "@/hooks/useVideoHandlers";
+import { resolveIntroEndTime } from "@/utils/introSkip";
 import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('PlayScreen');
@@ -129,6 +130,7 @@ export default function PlayScreen() {
   const reset = usePlayerStore((s) => s.reset);
   const loadVideo = usePlayerStore((s) => s.loadVideo);
   const autoSkipIntro = useSettingsStore((s) => s.autoSkipIntro);
+  const introSkipSeconds = useSettingsStore((s) => s.introSkipSeconds);
   const backgroundPlayback = useSettingsStore((s) => s.backgroundPlayback);
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
@@ -139,11 +141,13 @@ export default function PlayScreen() {
   });
 
   // 使用Video事件处理hook
+  // 生效的片头结束点：有手动标记用标记值，没标过按设置里的片头时长跳
+  const effectiveIntroEndTime = resolveIntroEndTime(introEndTime, introSkipSeconds);
   const { videoViewProps } = useVideoHandlers({
     player,
     currentEpisode,
     initialPosition,
-    introEndTime,
+    introEndTime: effectiveIntroEndTime,
     playbackRate,
     handlePlaybackStatusUpdate,
     deviceType,

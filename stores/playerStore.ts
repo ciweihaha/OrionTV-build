@@ -3,6 +3,7 @@ import Toast from "react-native-toast-message";
 import type { VideoPlayer } from "expo-video";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { resolveIntroEndTime } from "@/utils/introSkip";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import { Logger } from '@/utils/Logger';
 
@@ -20,6 +21,10 @@ const SEEK_RESET_DELAY_MS = 1_000;
  * （与第 14 轮 homeStore、第 21 轮 useApiConfig 同一类竞态。）
  */
 let loadVideoSeq = 0;
+
+// 上一次 seek 的目标位置（毫秒）：连续快进时以它为基数累积，避免
+// status.positionMillis 每 0.5 秒才更新一次、多次 seek 都算在同一个旧位置上
+let seekTargetMillis: number | null = null;
 
 /**
  * 正在处理换源的失败 URL：播放器 error 事件和 20s 加载超时可能同时触发，
@@ -56,6 +61,8 @@ interface PlayerState {
   status: PlaybackStatus | null;
   isLoading: boolean;
   showControls: boolean;
+  /** 播放控制条里进度条是否正拿到 TV 焦点（拿到时左/右键继续 seek） */
+  isProgressBarFocused: boolean;
   showEpisodeModal: boolean;
   showSourceModal: boolean;
   showSpeedModal: boolean;
@@ -85,6 +92,7 @@ interface PlayerState {
   handlePlaybackStatusUpdate: (newStatus: PlaybackStatus) => void;
   setLoading: (loading: boolean) => void;
   setShowControls: (show: boolean) => void;
+  setProgressBarFocused: (focused: boolean) => void;
   setShowEpisodeModal: (show: boolean) => void;
   setShowSourceModal: (show: boolean) => void;
   setShowSpeedModal: (show: boolean) => void;
@@ -109,6 +117,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   status: null,
   isLoading: true,
   showControls: false,
+  isProgressBarFocused: false,
   showEpisodeModal: false,
   showSourceModal: false,
   showSpeedModal: false,
@@ -332,7 +341,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     const { status, videoPlayer } = get();
     if (!status?.isLoaded || !status.durationMillis) return;
 
-    const newPosition = Math.max(0, Math.min(status.positionMillis + duration, status.durationMillis));
+    // 连续快进以“上次目标位置”为基数累积：status.positionMillis 每 0.5 秒
+    // 才更新一次，直接用它算会把多次 seek 都落在同一个旧位置上，停不准
+    const basePosition = seekTargetMillis ?? status.positionMillis;
+    const newPosition = Math.max(0, Math.min(basePosition + duration, status.durationMillis));
+    seekTargetMillis = newPosition;
     try {
       // expo-video uses seconds
       videoPlayer!.currentTime = newPosition / 1000;
@@ -341,15 +354,20 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       Toast.show({ type: "error", text1: "快进/快退失败" });
     }
 
+    // 快进时亮起控制条：进度条 + 当前时间/总时长一直可见，知道跳到哪了
     set({
       isSeeking: true,
       seekPosition: newPosition / status.durationMillis,
+      showControls: true,
     });
 
     if (get()._seekTimeout) {
       clearTimeout(get()._seekTimeout);
     }
-    const timeoutId = setTimeout(() => set({ isSeeking: false }), SEEK_RESET_DELAY_MS);
+    const timeoutId = setTimeout(() => {
+      seekTargetMillis = null;
+      set({ isSeeking: false });
+    }, SEEK_RESET_DELAY_MS);
     set({ _seekTimeout: timeoutId });
   },
 
@@ -451,7 +469,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const { currentEpisodeIndex, episodes, outroStartTime, introEndTime, introSkipped, nextEpisodeDismissed, playEpisode, videoPlayer } = get();
     const detail = useDetailStore.getState().detail;
-    const { autoSkipIntro, nextEpisodeOverlayEnabled } = useSettingsStore.getState();
+    const { autoSkipIntro, introSkipSeconds, nextEpisodeOverlayEnabled } = useSettingsStore.getState();
+    // 生效的片头结束点：有手动标记用标记值，没标过按设置里的片头时长跳
+    const effectiveIntroEnd = resolveIntroEndTime(introEndTime, introSkipSeconds);
 
     // 片头/片尾标记是按剧保存的（不是按集）：同一部剧里有短集时，
     // 标记可能超过本集片长——片尾剩余时间大于片长时，阈值是负数，
@@ -472,24 +492,27 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     // 片头自动跳过：每集只跳一次（开关默认开启，可在设置里关闭）
     if (
       autoSkipIntro &&
-      introEndTime &&
-      introEndTime > 0 &&
+      effectiveIntroEnd &&
+      effectiveIntroEnd > 0 &&
       newStatus.durationMillis &&
-      introEndTime < newStatus.durationMillis &&
+      effectiveIntroEnd < newStatus.durationMillis &&
       newStatus.isPlaying &&
-      newStatus.positionMillis < introEndTime &&
+      newStatus.positionMillis < effectiveIntroEnd &&
       !introSkipped
     ) {
       let skipped = false;
       try {
         if (videoPlayer) {
-          videoPlayer.currentTime = introEndTime / 1000;
+          videoPlayer.currentTime = effectiveIntroEnd / 1000;
           skipped = true;
         }
       } catch (error) {
         logger.debug("Failed to skip intro:", error);
       }
-      if (skipped) set({ introSkipped: true });
+      if (skipped) {
+        set({ introSkipped: true });
+        Toast.show({ type: "info", text1: "已跳过片头" });
+      }
     }
 
     if (detail && newStatus.durationMillis) {
@@ -516,6 +539,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setLoading: (loading) => set({ isLoading: loading }),
   setShowControls: (show) => set({ showControls: show }),
+
+  setProgressBarFocused: (focused) => set({ isProgressBarFocused: focused }),
   setShowEpisodeModal: (show) => set({ showEpisodeModal: show }),
   setShowSourceModal: (show) => set({ showSourceModal: show }),
   setShowSpeedModal: (show) => set({ showSpeedModal: show }),
@@ -546,12 +571,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     if (seekTimeout) {
       clearTimeout(seekTimeout);
     }
+    seekTargetMillis = null;
     set({
       episodes: [],
       currentEpisodeIndex: 0,
       status: null,
       isLoading: true,
       showControls: false,
+      isProgressBarFocused: false,
       showEpisodeModal: false,
       showSourceModal: false,
       showSpeedModal: false,

@@ -161,6 +161,7 @@ export const useVideoHandlers = ({
               if (skipIntroOnReady > 0) {
                 // 本集片头已在就绪时跳过，播放中不再重复跳（用户可手动拉回片头重看）
                 usePlayerStore.setState({ introSkipped: true });
+                Toast.show({ type: "info", text1: "已跳过片头" });
               }
               // 2. 显式调用播放以确保自动播放
               logger.info(`[AUTOPLAY] Attempting to start playback after ready`);

@@ -255,14 +255,17 @@ export default function HomeScreen() {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      paddingHorizontal: spacing * 1.5,
+      // TV 上左右各留 32px：顶栏贴着屏幕边缘 + 电视 overscan，右边按钮会被切
+      paddingHorizontal: deviceType === "tv" ? spacing * 2 : spacing * 1.5,
       marginBottom: spacing,
     },
     headerTitle: {
       // TV 下原来 32 号加粗：首页/直播两个 tab 占满顶栏、字往下顶 16px 后
-      // 挤到下面的分类行，看着像遮挡。改 24 号、去掉 TV 的上偏移，
-      // 仍比分类文字（16 号）大一级，层级还在。
-      fontSize: deviceType === "mobile" ? 24 : deviceType === "tablet" ? 28 : 24,
+      // 挤到下面的分类行，看着像遮挡。1.6.6 改 24 号仍不够（只改字号没改
+      // 行高，ThemedText 默认行高 24*scale、1920 宽屏上 46px）：1.6.8 再
+      // 降一档到 20 号、TV 行高锁死 28px。
+      fontSize: deviceType === "mobile" ? 24 : deviceType === "tablet" ? 28 : 20,
+      lineHeight: deviceType === "tv" ? 28 : undefined,
       fontWeight: "bold",
       paddingTop: deviceType === "tv" ? 0 : 16,
     },
@@ -279,6 +282,9 @@ export default function HomeScreen() {
     },
     categoryListContent: {
       paddingHorizontal: spacing,
+      // TV 上右边多留 48px：分类行贴着屏幕右边缘 + 电视 overscan，
+      // 最后一个分类按钮会被切掉一半
+      paddingRight: deviceType === "tv" ? spacing * 3 : undefined,
     },
     categoryButton: {
       paddingHorizontal: deviceType === "tv" ? spacing / 4 : spacing / 2,
@@ -289,6 +295,8 @@ export default function HomeScreen() {
     categoryText: {
       fontSize: deviceType === "mobile" ? 14 : 16,
       fontWeight: "500",
+      // ThemedText 默认行高 24*scale（TV 上 46px），分类字看着巨大还往下顶
+      lineHeight: 22,
     },
     contentContainer: {
       flex: 1,

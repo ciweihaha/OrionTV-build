@@ -46,6 +46,8 @@ export interface AppSettings {
   m3uUrl: string;
   /** 播到片头时自动跳到片头结束处（默认开启） */
   autoSkipIntro?: boolean;
+  /** 没手动标记过片头时间时，默认跳过的片头时长（秒）；0 表示不用默认时长、只用手动标记 */
+  introSkipSeconds?: number;
   /** 播到片尾附近时弹出下一集预告（默认开启） */
   nextEpisodeOverlayEnabled?: boolean;
   /** 无痕模式：开启后不写入播放记录（默认关闭） */
@@ -550,6 +552,7 @@ export class SettingsManager {
       },
       m3uUrl: "",
       autoSkipIntro: true,
+      introSkipSeconds: 90,
       nextEpisodeOverlayEnabled: true,
       incognitoMode: false,
       backgroundPlayback: false,

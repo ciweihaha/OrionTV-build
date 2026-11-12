@@ -3,7 +3,10 @@ import { useTVEventHandler } from "react-native";
 import type { TVRemoteEvent } from "react-native";
 import usePlayerStore from "@/stores/playerStore";
 
-const SEEK_STEP = 20 * 1000; // 快进/快退的时间步长（毫秒）
+const SEEK_STEP = 10 * 1000; // 快进/快退的时间步长（毫秒）：按一下跳 10 秒，20 秒一步停不准
+
+// 长按快进间隔（毫秒）：10 秒/300ms ≈ 33 秒/秒，原 20 秒/200ms=100 秒/秒太快停不准
+const LONG_PRESS_SEEK_INTERVAL_MS = 300;
 
 // 定时器延迟时间（毫秒）
 const CONTROLS_TIMEOUT = 5000;
@@ -16,6 +19,7 @@ export const useTVRemoteHandler = () => {
   // 按字段订阅：这个 hook 在播放页里调用，整库订阅会让播放页跟着每 0.5s 的
   // status 更新重渲染（第 6 轮只改了播放页本身，这里是漏网的订阅点）
   const showControls = usePlayerStore((s) => s.showControls);
+  const isProgressBarFocused = usePlayerStore((s) => s.isProgressBarFocused);
   const setShowControls = usePlayerStore((s) => s.setShowControls);
   const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
   const showSourceModal = usePlayerStore((s) => s.showSourceModal);
@@ -67,7 +71,7 @@ export const useTVRemoteHandler = () => {
   }, []);
 
   // 任一弹窗打开时若正在长按快进，把 interval 停掉：正常流程松键时会清掉，
-  // 但松键事件一旦丢失，interval 会一直每 200ms 快进下去
+  // 但松键事件一旦丢失，interval 会一直每 300ms 快进下去
   // （第 5 轮只守了选集弹窗，选源/倍速弹窗同理：都是按键打开的）
   useEffect(() => {
     if ((showEpisodeModal || showSourceModal || showSpeedModal) && fastForwardIntervalRef.current) {
@@ -98,15 +102,16 @@ export const useTVRemoteHandler = () => {
 
       resetTimer();
 
-      if (showControls) {
-        // 如果控制条已显示，则不处理后台的快进/快退等操作
-        // 避免与控制条上的按钮焦点冲突
+      // 控制条显示时左/右键仍要快进快退：进度条拿到焦点时（控制条弹出默认
+      // 就是进度条焦点）左/右直接 seek；焦点在别的按钮上时左/右挪焦点，
+      // 由 RN TV 焦点系统处理，这里不拦截也不 seek
+      if (showControls && !isProgressBarFocused) {
         return;
       }
 
       // 离散按键只响应松键（eventKeyAction === 1）：原生层对同一按键在
       // ACTION_DOWN 与 ACTION_UP 各发一次事件（第 97 轮远程输入开关同款问题），
-      // 左/右快进不守会一次按键 seek 两次、20 秒一步变成 40 秒；select 原来
+      // 左/右快进不守会一次按键 seek 两次、10 秒一步变成 20 秒；select 原来
       // 靠控制条弹出后的门控碰巧挡住第二次，时序一抖就双切、播放暂停看起来失灵。
       // 长按快进（longLeft/longRight）本身就分按下开始、松键停止两条边，
       // 不在此守，留在下面各分支里按 eventKeyAction 区分。
@@ -119,17 +124,21 @@ export const useTVRemoteHandler = () => {
 
       switch (event.eventType) {
         case "select":
-          togglePlayPause();
-          setShowControls(true);
+          // 控制条已显示时 select 由焦点按钮自己的 onPress 处理，
+          // 这里再 toggle 会和按钮 onPress 双重触发
+          if (!showControls) {
+            togglePlayPause();
+            setShowControls(true);
+          }
           break;
         case "left":
-          seek(-SEEK_STEP); // 快退15秒
+          seek(-SEEK_STEP); // 快退 10 秒
           break;
         case "longLeft":
           if (!fastForwardIntervalRef.current && Number(event.eventKeyAction) === 0) {
             fastForwardIntervalRef.current = setInterval(() => {
-              seek(-SEEK_STEP); 
-            }, 200);
+              seek(-SEEK_STEP);
+            }, LONG_PRESS_SEEK_INTERVAL_MS);
           }
           break;
         case "right":
@@ -139,16 +148,18 @@ export const useTVRemoteHandler = () => {
           // 长按开始: 启动连续快进
           if (!fastForwardIntervalRef.current && Number(event.eventKeyAction) === 0) {
             fastForwardIntervalRef.current = setInterval(() => {
-              seek(SEEK_STEP); 
-            }, 200);
+              seek(SEEK_STEP);
+            }, LONG_PRESS_SEEK_INTERVAL_MS);
           }
           break;
         case "down":
-          setShowControls(true);
+          if (!showControls) {
+            setShowControls(true);
+          }
           break;
       }
     },
-    [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [showControls, isProgressBarFocused, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
   );
 
   useTVEventHandler(handleTVEvent);

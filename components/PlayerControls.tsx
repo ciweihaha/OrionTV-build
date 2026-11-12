@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
@@ -30,6 +30,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
   const setShowSpeedModal = usePlayerStore((s) => s.setShowSpeedModal);
   const setIntroEndTime = usePlayerStore((s) => s.setIntroEndTime);
   const setOutroStartTime = usePlayerStore((s) => s.setOutroStartTime);
+  const setProgressBarFocused = usePlayerStore((s) => s.setProgressBarFocused);
   const introEndTime = usePlayerStore((s) => s.introEndTime);
   const outroStartTime = usePlayerStore((s) => s.outroStartTime);
 
@@ -74,7 +75,18 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
       </View>
 
       <View style={styles.bottomControlsContainer}>
-        <View style={styles.progressBarContainer}>
+        {/* 进度条可聚焦：控制条弹出时默认拿到焦点，左/右键直接快进快退；
+            按 OK 暂停/播放（和播放按钮同一个动作） */}
+        <Pressable
+          hasTVPreferredFocus={showControls}
+          onFocus={() => setProgressBarFocused(true)}
+          onBlur={() => setProgressBarFocused(false)}
+          onPress={togglePlayPause}
+          style={({ focused }) => [
+            styles.progressBarContainer,
+            focused && styles.progressBarContainerFocused,
+          ]}
+        >
           <View style={styles.progressBarBackground} />
           <View
             style={[
@@ -84,7 +96,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
               },
             ]}
           />
-        </View>
+        </Pressable>
 
         <ThemedText style={{ color: "white", marginTop: 5 }}>
           {status?.isLoaded
@@ -97,7 +109,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             <ArrowDownToDot color="white" size={24} />
           </MediaButton>
 
-          <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
+          <MediaButton onPress={togglePlayPause}>
             {status?.isLoaded && status.isPlaying ? (
               <Pause color="white" size={24} />
             ) : (
@@ -167,6 +179,13 @@ const styles = StyleSheet.create({
     height: 8,
     position: "relative",
     marginTop: 10,
+  },
+  /** 进度条拿到焦点时的描边环：让用户一眼看到左/右键是在调进度 */
+  progressBarContainerFocused: {
+    borderWidth: 2,
+    borderColor: "#fff",
+    borderRadius: 8,
+    height: 12,
   },
   progressBarBackground: {
     position: "absolute",

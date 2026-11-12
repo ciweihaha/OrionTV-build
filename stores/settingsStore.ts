@@ -27,6 +27,8 @@ interface SettingsState {
   m3uUrl: string;
   remoteInputEnabled: boolean;
   autoSkipIntro: boolean;
+  /** 没手动标记过片头时间时默认跳过的片头时长（秒），0 表示只用手动标记 */
+  introSkipSeconds: number;
   nextEpisodeOverlayEnabled: boolean;
   incognitoMode: boolean;
   backgroundPlayback: boolean;
@@ -45,6 +47,7 @@ interface SettingsState {
   setM3uUrl: (url: string) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   setAutoSkipIntro: (enabled: boolean) => void;
+  setIntroSkipSeconds: (seconds: number) => void;
   setNextEpisodeOverlayEnabled: (enabled: boolean) => void;
   setIncognitoMode: (enabled: boolean) => void;
   setBackgroundPlayback: (enabled: boolean) => void;
@@ -59,6 +62,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   m3uUrl: "",
   remoteInputEnabled: false,
   autoSkipIntro: true,
+  introSkipSeconds: 90,
   nextEpisodeOverlayEnabled: true,
   incognitoMode: false,
   backgroundPlayback: false,
@@ -76,6 +80,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       m3uUrl: settings.m3uUrl,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       autoSkipIntro: settings.autoSkipIntro ?? true,
+      introSkipSeconds: settings.introSkipSeconds ?? 90,
       nextEpisodeOverlayEnabled: settings.nextEpisodeOverlayEnabled ?? true,
       incognitoMode: settings.incognitoMode ?? false,
       backgroundPlayback: settings.backgroundPlayback ?? false,
@@ -137,12 +142,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setM3uUrl: (url) => set({ m3uUrl: url }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setAutoSkipIntro: (enabled) => set({ autoSkipIntro: enabled }),
+  setIntroSkipSeconds: (seconds) => set({ introSkipSeconds: seconds }),
   setNextEpisodeOverlayEnabled: (enabled) => set({ nextEpisodeOverlayEnabled: enabled }),
   setIncognitoMode: (enabled) => set({ incognitoMode: enabled }),
   setBackgroundPlayback: (enabled) => set({ backgroundPlayback: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, autoSkipIntro, nextEpisodeOverlayEnabled, incognitoMode, backgroundPlayback } = get();
+    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, autoSkipIntro, introSkipSeconds, nextEpisodeOverlayEnabled, incognitoMode, backgroundPlayback } = get();
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
     let processedApiBaseUrl = apiBaseUrl.trim();
@@ -172,6 +178,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       remoteInputEnabled,
       videoSource,
       autoSkipIntro,
+      introSkipSeconds,
       nextEpisodeOverlayEnabled,
       incognitoMode,
       backgroundPlayback,
