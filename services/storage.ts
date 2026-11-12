@@ -151,8 +151,23 @@ export class PlayerSettingsManager {
           keys.slice(0, keys.length - MAX_PLAYER_SETTINGS).forEach((k) => delete allSettings[k]);
         }
       } else {
-        // If all are undefined, remove the key
-        delete allSettings[key];
+        // 全是 undefined：只删本次显式传入的字段（如清除片头标记时传入的
+        // introEndTime），保留未提及的字段（如倍速）。旧逻辑整条删 key，
+        // 播放中每次节流保存（PlayRecordManager.save 不带 playbackRate）
+        // 都会把已存的倍速删掉，下次打开视频倍速回到 1x。
+        const existing = allSettings[key];
+        if (existing) {
+          if ("introEndTime" in settings) delete existing.introEndTime;
+          if ("outroStartTime" in settings) delete existing.outroStartTime;
+          if ("playbackRate" in settings) delete existing.playbackRate;
+          if (
+            existing.introEndTime === undefined &&
+            existing.outroStartTime === undefined &&
+            existing.playbackRate === undefined
+          ) {
+            delete allSettings[key];
+          }
+        }
       }
       await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
     });

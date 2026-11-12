@@ -21,6 +21,13 @@ jest.mock("@/services/api", () => ({
     logout: jest.fn(),
     setSessionRestorer: jest.fn(),
   },
+  isCancelError: (error: unknown) => {
+    if (!error || typeof error !== "object") return false;
+    const { name, message } = error as { name?: unknown; message?: unknown };
+    if (name === "AbortError") return true;
+    if (typeof message === "string" && /abort|cancel/i.test(message)) return true;
+    return false;
+  },
 }));
 
 jest.mock("@/services/storage", () => ({

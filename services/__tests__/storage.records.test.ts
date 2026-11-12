@@ -1,4 +1,4 @@
-import { PlayRecordManager } from "../storage";
+import { PlayRecordManager, PlayerSettingsManager } from "../storage";
 import { storageConfig } from "../storageConfig";
 
 // 内存 AsyncStorage：get/set 往返，测 blob 内容
@@ -112,6 +112,45 @@ describe("PlayRecordManager 本地模式（第 13 轮 M2）", () => {
     const blob = JSON.parse(mockStore.get(PLAY_RECORDS)!);
     expect(blob["src1+id1"]).toBeUndefined();
     expect(blob["src1+id2"].introEndTime).toBeUndefined();
+  });
+});
+
+describe("PlayerSettingsManager 倍速保留（第 15 轮 B1）", () => {
+  beforeEach(() => {
+    mockStore.clear();
+    jest.clearAllMocks();
+    storageConfig.setStorageType("localstorage");
+  });
+
+  afterEach(() => {
+    storageConfig.setStorageType(undefined);
+  });
+
+  it("无标记的播放记录保存不删已存倍速", async () => {
+    // 用户设过 1.5x 倍速，未标记片头/片尾
+    await PlayerSettingsManager.save("src1", "id1", { playbackRate: 1.5 });
+    // 播放中节流保存：PlayRecordManager.save 不带 playbackRate
+    await PlayRecordManager.save("src1", "id1", {
+      title: "剧A", cover: "", index: 1, total_episodes: 10,
+      play_time: 5000, source_name: "源1",
+    } as any);
+
+    const settings = await PlayerSettingsManager.get("src1", "id1");
+    expect(settings?.playbackRate).toBe(1.5);
+  });
+
+  it("清除片头标记时保留倍速，三个字段全清时才删整条", async () => {
+    await PlayerSettingsManager.save("src1", "id1", { introEndTime: 90, playbackRate: 1.5 });
+    // 清除片头：传 undefined 的 introEndTime + outroStartTime（PlayRecordManager.save 的调法）
+    await PlayerSettingsManager.save("src1", "id1", { introEndTime: undefined, outroStartTime: undefined });
+    let settings = await PlayerSettingsManager.get("src1", "id1");
+    expect(settings?.introEndTime).toBeUndefined();
+    expect(settings?.playbackRate).toBe(1.5);
+
+    // 三个字段全显式清掉：整条删除
+    await PlayerSettingsManager.save("src1", "id1", { introEndTime: undefined, outroStartTime: undefined, playbackRate: undefined });
+    settings = await PlayerSettingsManager.get("src1", "id1");
+    expect(settings).toBeNull();
   });
 });
 
