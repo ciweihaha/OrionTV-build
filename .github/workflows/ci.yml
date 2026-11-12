@@ -36,11 +36,17 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      # M1：package.json 与 app.json 的版本号（含 versionCode）必须一致，
+      # 漂移即失败（见 scripts/sync-version.js）。
+      - name: Check version consistency
+        run: yarn check-version
+
       - name: Typecheck
         run: yarn tsc --noEmit
 
+      # L16：警告上限从 50 收紧到 0（当前实际就是 0 警告），警告不再悄悄累积。
       - name: Lint
-        run: yarn eslint . --max-warnings 50
+        run: yarn eslint . --max-warnings 0
 
   test:
     name: Tests (jest --ci)

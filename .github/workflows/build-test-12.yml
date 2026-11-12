@@ -6,6 +6,10 @@ name: Build Test 1.2
 # versionCode 也保持和正式构建一致（不设置），避免以后装正式版时被拦。
 # 不要在这里加 Create Release / 打 tag / 上传 R2 的步骤。
 # 正式发版只走 build-apk.yml（master 分支）。
+#
+# 测试包同样用 release keystore 签名（与正式版同签名），否则正式版装不上
+# 去（签名不一致必须先卸载测试版）。签名机制与 build-apk.yml 相同，见
+# docs/release-signing.md。
 
 on:
   workflow_dispatch:
@@ -14,13 +18,38 @@ on:
 permissions:
   contents: read
 
+# 测试构建可被新一次触发取代（不像正式发版需要排队跑完）。
+concurrency:
+  group: build-test-12
+  cancel-in-progress: true
+
 jobs:
   test_build:
     name: Build Android TV Test APK 1.2.0
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 签名 Secret 缺失时直接失败，绝不静默出 debug 签名包（否则正式版
+      # 无法覆盖安装它）。Secret 值不打印，只检查是否为空。
+      - name: Check release signing secrets
+        run: |
+          missing=""
+          for v in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing release signing secret(s):$missing — see docs/release-signing.md"
+            exit 1
+          fi
+          echo "All 4 release signing secrets are set."
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -55,11 +84,51 @@ jobs:
           distribution: "zulu"
           java-version: "17"
 
+      # 缓存 Gradle 发行版与依赖（同 build-apk.yml 的 M5 修复）。
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # 唯一一次 prebuild：`yarn build` 内部也会 prebuild（且带 --clean），
+      # 旧流程先单独跑 `yarn prebuild` 再跑 `yarn build`，第一次 prebuild
+      # 被完整浪费（同 build-apk.yml 的 M5 修复）。这里拆成 prebuild 与
+      # gradle 两步，中间插入 keystore 还原。
       - name: Prebuild TV App
         run: yarn prebuild
 
+      - name: Restore release keystore
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          chmod 600 android/app/release.keystore
+          keytool -list -keystore android/app/release.keystore \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS"
+          grep -q 'ORIONTV_RELEASE_STORE_FILE' android/app/build.gradle \
+            || { echo "::error::Release signing was not injected into android/app/build.gradle (withReleaseSigning plugin)"; exit 1; }
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+
+      # 签名配置经 ORG_GRADLE_PROJECT_* 环境变量传给 Gradle（见 build-apk.yml
+      # 注释：避免密码里的特殊字符被 gradle.properties 语法误解析）。
       - name: Build TV APK
-        run: yarn build
+        run: cd android && ./gradlew assembleRelease
+        env:
+          ORG_GRADLE_PROJECT_ORIONTV_RELEASE_STORE_FILE: release.keystore
+          ORG_GRADLE_PROJECT_ORIONTV_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Verify APK is not debug-signed
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          keytool -printcert -jarfile "$APK" > /tmp/apk-cert.txt
+          grep -i 'Owner:' /tmp/apk-cert.txt | head -1
+          if grep -qi 'Android Debug' /tmp/apk-cert.txt; then
+            echo "::error::APK is signed with the Android debug key — release signing did not apply."
+            exit 1
+          fi
+          echo "APK is signed with a non-debug certificate."
 
       - name: Rename APK file
         run: |
