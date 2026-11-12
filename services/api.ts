@@ -42,6 +42,24 @@ export interface AggCategoryResponse {
 // agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
 const AGG_BASE_URL = "https://ysp.ciweihaha.win/agg";
 
+/**
+ * 取消错误识别：不同 fetch 实现的取消错误形状不一样，不能只判 name。
+ * - whatwg-fetch / 浏览器：DOMException，name 为 "AbortError"（Hermes 下
+ *   DOMException 回退实现继承 Error，但不要依赖 instanceof）；
+ * - Expo 原生 fetch（真机实际用的）：FetchError extends Error，name 是
+ *   "Error"，message 是 "fetch failed: Fetch request has been canceled"。
+ * 因此 name === "AbortError" 或 message 含 abort/cancel 都算取消。
+ * 注意：只判断“请求是否被取消”，超时与调用方取消的区分仍由调用方
+ * 结合 signal.aborted 做（见 _fetch 的 OTV-4 注释）。
+ */
+export function isCancelError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { name, message } = error as { name?: unknown; message?: unknown };
+  if (name === "AbortError") return true;
+  if (typeof message === "string" && /abort|cancel/i.test(message)) return true;
+  return false;
+}
+
 export interface VideoDetail {
   id: string;
   title: string;
@@ -414,11 +432,15 @@ export class API {
     } catch (error) {
       // OTV-4：区分错误来源。调用方已取消（callerSignal?.aborted）时抛 AbortError
       // 语义错误（或直接透传），绝不伪装成超时；仅超时导致的中止才转为 REQUEST_TIMEOUT。
-      // 改动前已 grep：生产代码中 REQUEST_TIMEOUT 的字符串消费点只有本文件；
-      // stores/detailStore.ts 已按 error.name === "AbortError" 静默取消，OTV-4 后该判断
-      // 才能真正生效（此前取消被伪装成普通 Error，无法被静默）；其余调用方按通用错误处理，
-      // 无需另改。测试中依赖“取消也走超时分支”的断言已同步改为 AbortError（见 api.test.ts）。
-      if (error instanceof Error && error.name === "AbortError") {
+      // REQUEST_TIMEOUT / RESPONSE_TIMEOUT 的字符串消费点：本文件（分类与重试判断）
+      // 与 stores/detailStore.ts（超时友好文案）；其余调用方按通用错误处理，无需另改。
+      // 测试中依赖“取消也走超时分支”的断言已同步改为 AbortError（见 api.test.ts）。
+      //
+      // 取消识别必须用 isCancelError，不能只判 name === "AbortError"：真机上
+      // fetch 是 Expo 原生实现，取消时抛 FetchError（name 是 "Error"，message
+      // 是 "fetch failed: Fetch request has been canceled"），只判 name 会漏掉，
+      // 超时就被当成普通错误一路抛到详情页（1.6.7 实测 bug）。
+      if (isCancelError(error)) {
         if (callerAborted()) {
           throw abortError();
         }
@@ -672,10 +694,41 @@ export class API {
     };
   }
 
+  /**
+   * 资源列表：详情页标准搜索的第一步。晚高峰 TV→服务器链路抖动时单次
+   * 15 秒超时即失败，详情页直接报“获取视频源失败”（1.6.7 实测）。与
+   * getAggCategory 同理：超时重试一次（退避 1 秒），两次都超时才抛错；
+   * 调用方取消（AbortError / signal 已中止）绝不重试。
+   */
   async getResources(signal?: AbortSignal): Promise<ApiSite[]> {
     const url = `/api/search/resources`;
-    const response = await this._fetch(url, { signal });
-    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "resources");
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        // 退避等待期间调用方也可能取消：被取消的请求绝不重试
+        if (signal?.aborted) {
+          const err = new Error("The user aborted a request.");
+          err.name = "AbortError";
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      try {
+        const response = await this._fetch(url, { signal });
+        return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "resources");
+      } catch (e) {
+        lastError = e;
+        // 调用方取消不重试；只有超时（连接超时 REQUEST_TIMEOUT / 体读取超时
+        // RESPONSE_TIMEOUT）才值得重试一次，其它错误直接抛。
+        if (isCancelError(e)) throw e;
+        const isTimeout =
+          e instanceof Error &&
+          (e.message.startsWith("REQUEST_TIMEOUT") || e.message.startsWith("RESPONSE_TIMEOUT"));
+        if (isTimeout && attempt < 1) continue;
+        throw e;
+      }
+    }
+    throw lastError ?? new Error("GET_RESOURCES_FAILED");
   }
 
   async getVideoDetail(source: string, id: string, signal?: AbortSignal): Promise<VideoDetail> {

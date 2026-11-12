@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SearchResult, api } from "@/services/api";
+import { SearchResult, api, isCancelError } from "@/services/api";
 import { getResolutionFromM3U8 } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
@@ -274,12 +274,26 @@ const useDetailStore = create<DetailState>((set, get) => ({
             logger.info(`[SUCCESS] Standard search completed, total results: ${totalResults}`);
           }
         } catch (resourceError) {
-          // 被取消不算失败：getResources 的 AbortError 不能写进新 init 的 error
-          if (signal.aborted || (resourceError instanceof Error && resourceError.name === "AbortError")) return;
+          // 被取消不算失败：getResources 的 AbortError 不能写进新 init 的 error。
+          // 只判 name === "AbortError" 不够：Expo 原生 fetch 的取消错误 name 是
+          // "Error"（message 含 canceled），1.6.7 实测因此漏判、超时被当成硬失败
+          // 显示给用户。用 isCancelError 统一识别（见 services/api.ts）。
+          if (signal.aborted || isCancelError(resourceError)) return;
           logger.error(`[ERROR] Failed to get resources:`, resourceError);
-          set({ 
-            error: `获取视频源失败：${resourceError instanceof Error ? resourceError.message : '网络错误，请稍后重试'}`,
-            loading: false 
+          // 超时已在 getResources 内重试过一次，仍失败时给一句人话，不暴露内部错误码
+          const isTimeout =
+            resourceError instanceof Error &&
+            (resourceError.message.startsWith("REQUEST_TIMEOUT") ||
+              resourceError.message.startsWith("RESPONSE_TIMEOUT"));
+          set({
+            error: `获取视频源失败：${
+              isTimeout
+                ? "网络超时，请检查网络后重试"
+                : resourceError instanceof Error
+                  ? resourceError.message
+                  : "网络错误，请稍后重试"
+            }`,
+            loading: false,
           });
           return;
         }

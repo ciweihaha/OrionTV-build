@@ -35,7 +35,9 @@ export interface Category {
 
 const initialCategories: Category[] = [
   { title: "最近播放", type: "record" },
-  { title: "热门剧集", type: "tv", tag: "热门" },
+  // “豆瓣热播”：tag 仍是豆瓣的“热门”（豆瓣没有“热播”这个 tag，传“热播”
+  // 会返回空列表；热门即豆瓣热播榜，与豆瓣 Top250 同走 getDoubanData）。
+  { title: "豆瓣热播", type: "tv", tag: "热门" },
   { title: "电视剧", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧", "日本动画", "动画"], cmsType: 2 },
   {
     title: "电影",

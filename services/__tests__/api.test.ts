@@ -395,3 +395,78 @@ describe("API.getAggCategory 地区 / 年代筛选", () => {
     expect(url).toBe("https://ysp.ciweihaha.win/agg?ac=videolist&t=1&pg=1");
   });
 });
+
+describe("API._fetch Expo 原生 fetch 取消错误识别（1.6.7 实测 bug）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Expo 原生 fetch 的取消错误形状：FetchError extends Error，name 是 "Error"，
+  // message 带 "fetch failed: " 前缀（见 node_modules/expo/build/winter/fetch/FetchErrors.js）。
+  function expoCancelError() {
+    return new Error("fetch failed: Fetch request has been canceled");
+  }
+
+  it("超时中止时 Expo 取消错误转为 REQUEST_TIMEOUT，不再原样抛给调用方", async () => {
+    fetchMock.mockRejectedValue(expoCancelError());
+    await expect((api as any)._fetch("/api/search/resources", {}, 5000)).rejects.toThrow(
+      /^REQUEST_TIMEOUT/
+    );
+  });
+
+  it("调用方取消时 Expo 取消错误转为 AbortError，不伪装成超时", async () => {
+    fetchMock.mockRejectedValue(expoCancelError());
+    const caller = new AbortController();
+    caller.abort();
+    await expect(
+      (api as any)._fetch("/api/search/resources", { signal: caller.signal }, 5000)
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+describe("API.getResources 超时重试一次（1.6.7 实测 bug）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("首次超时、第二次成功：共发 2 次请求，返回资源列表", async () => {
+    fetchMock
+      .mockRejectedValueOnce(abortError())
+      .mockResolvedValueOnce(makeResponse(200, [{ key: "a", api: "u", name: "n" }]));
+    const res = await api.getResources();
+    expect(res).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("两次都超时：抛 REQUEST_TIMEOUT，共发 2 次请求", async () => {
+    fetchMock.mockRejectedValue(abortError());
+    await expect(api.getResources()).rejects.toThrow(/^REQUEST_TIMEOUT/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("调用方取消不重试：一次请求后即以 AbortError 拒绝", async () => {
+    fetchMock.mockRejectedValue(abortError());
+    const caller = new AbortController();
+    caller.abort();
+    await expect(api.getResources(caller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
