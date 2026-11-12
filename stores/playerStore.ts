@@ -276,7 +276,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       set({
         isLoading: false,
         currentEpisodeIndex: episodeIndex,
-        initialPosition: position || initialPositionFromRecord,
+        initialPosition: position ?? initialPositionFromRecord,
         playbackRate: savedPlaybackRate,
         episodes: mappedEpisodes,
         // 合并后的记录已包含本地设置的片头/片尾时间，与原来 playerSettings 的值相同
@@ -557,10 +557,16 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     const { videoPlayer } = get();
     const detail = useDetailStore.getState().detail;
 
+    // 先写状态：player 未就绪（videoPlayer 为 null）时旧代码在 videoPlayer!
+    // 上抛 TypeError，被 catch 后只记 debug 日志，状态不更新、无提示，
+    // 用户以为倍速已改实际未生效；useVideoHandlers 的同步 effect 会在
+    // player 就绪后把状态里的倍速应用上去。
+    set({ playbackRate: rate });
     try {
       // expo-video: playbackRate is a settable property (seconds-based player)
-      videoPlayer!.playbackRate = rate;
-      set({ playbackRate: rate });
+      if (videoPlayer) {
+        videoPlayer.playbackRate = rate;
+      }
       
       // Save the playback rate preference
       if (detail) {
@@ -668,8 +674,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           title: `第 ${index + 1} 集`,
         }));
         
+        // 换源保进度：新 URL 就绪后 useVideoHandlers 按 initialPosition 跳转，
+        // 不更新它会跳回进播放页时的断点（或 0），25 分钟处换源被拉回起点。
+        // 同时复位 seekTargetMillis，残留的快进基数会污染后续 seek。
+        const currentPosition = get().status?.positionMillis ?? 0;
+        seekTargetMillis = null;
         set({
           episodes: mappedEpisodes,
+          initialPosition: currentPosition,
           isLoading: false, // 让Video组件重新渲染
         });
         

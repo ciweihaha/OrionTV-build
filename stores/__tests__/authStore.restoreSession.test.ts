@@ -131,4 +131,32 @@ describe("authStore.restoreSession（401 自动恢复的登录端）", () => {
     expect(apiLoginMock).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().isLoggedIn).toBe(true);
   });
+
+  it("退出竞态：restoreSession 在飞时用户点退出，登录完成也不把已退出的用户重新登入", async () => {
+    credsGetMock.mockResolvedValue({ username: "u", password: "p" });
+    let release!: (v: { ok: boolean }) => void;
+    apiLoginMock.mockImplementation(
+      () =>
+        new Promise<{ ok: boolean }>((res) => {
+          release = res;
+        })
+    );
+    (api.logout as jest.Mock).mockResolvedValue(undefined);
+
+    const restoreP = useAuthStore.getState().restoreSession();
+    // 等登录 mock 真被调用（release 已赋值）再点退出
+    for (let i = 0; i < 50 && apiLoginMock.mock.calls.length === 0; i++) {
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    }
+    expect(apiLoginMock).toHaveBeenCalledTimes(1);
+
+    // 登录还在飞时点退出
+    await useAuthStore.getState().logout();
+    expect(useAuthStore.getState().isLoggedIn).toBe(false);
+
+    // 登录完成（成功）：代次已变，不写登录态
+    release({ ok: true });
+    await restoreP;
+    expect(useAuthStore.getState().isLoggedIn).toBe(false);
+  });
 });
