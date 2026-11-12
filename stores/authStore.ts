@@ -154,7 +154,13 @@ const useAuthStore = create<AuthState>((set, get) => ({
         } catch (error) {
           // 自动登录失败，仍需用户手动输入。
           logger.warn("restoreSession auto-login failed, showing login modal.", error);
-          await AsyncStorage.removeItem("authCookies");
+          // 标记清除失败不能阻断弹登录框：removeItem 一抛，后面的 set 不执行，
+          // 用户处于“已登出但无入口重登”状态直到冷启动。
+          try {
+            await AsyncStorage.removeItem("authCookies");
+          } catch (removeError) {
+            logger.warn("restoreSession failed to clear authCookies marker", removeError);
+          }
           set({ isLoggedIn: false, isLoginModalVisible: true });
         }
       })().finally(() => {

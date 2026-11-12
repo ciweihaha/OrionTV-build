@@ -188,7 +188,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       backgroundPlayback,
     });
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
-      await AsyncStorage.setItem('authCookies', '');
+      // 标记清除失败不阻断地址切换：SettingsManager.save 已成功（新地址
+      // 已落盘），一抛就中止会跳过 api.setBaseUrl/set/fetchServerConfig，
+      // 磁盘是新地址、内存是旧地址（与紧邻的凭据清理一致，那里有 try/catch）。
+      try {
+        await AsyncStorage.setItem('authCookies', '');
+      } catch (error) {
+        logger.warn('换服务器时清理登录标记失败:', error);
+      }
       // 地址变了，旧服务器的保存凭据必须清掉：不清的话新服务器返回 401
       // 时 restoreSession 会把旧用户名/密码发往新地址。isLoggedIn 的短暂
       // 残留由 _layout 的 checkLoginStatus 随后纠正（这里不直接碰 authStore，

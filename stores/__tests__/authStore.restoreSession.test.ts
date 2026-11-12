@@ -166,4 +166,17 @@ describe("authStore.restoreSession（401 自动恢复的登录端）", () => {
     await restoreP;
     expect(useAuthStore.getState().isLoggedIn).toBe(false);
   });
+
+  it("第 21 轮 L-2：自动登录失败且标记清除也失败时，仍弹登录框且不向外抛", async () => {
+    credsGetMock.mockResolvedValue({ username: "u", password: "p" });
+    apiLoginMock.mockRejectedValue(new Error("Network request failed"));
+    asyncRemoveMock.mockRejectedValue(new Error("Storage full"));
+
+    await expect(useAuthStore.getState().restoreSession()).resolves.toBeUndefined();
+
+    // 旧代码：removeItem 一抛，后面的 set 不执行，登录框弹不出，用户处于
+    // “已登出但无入口重登”状态直到冷启动。
+    expect(useAuthStore.getState().isLoggedIn).toBe(false);
+    expect(useAuthStore.getState().isLoginModalVisible).toBe(true);
+  });
 });
