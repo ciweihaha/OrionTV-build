@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, FlatList, ScrollView, StyleSheet, ActivityIndicator, BackHandler, useTVEventHandler, Text, TouchableOpacity } from "react-native";
 import type { TVRemoteEvent } from "react-native";
+import { useRouter } from "expo-router";
 import LivePlayer from "@/components/LivePlayer";
+import { StyledButton } from "@/components/StyledButton";
 import { getPlayableUrl, getCachedM3u, refreshM3u, Channel } from "@/services/m3u";
 import { DEFAULT_EPG_URL, EpgData, getCachedEpg, refreshEpg, findEpgForChannel, currentProgrammes, programmeProgress } from "@/services/epg";
 import { ThemedView } from "@/components/ThemedView";
@@ -76,6 +78,7 @@ function formatProgrammeTime(ts: number): string {
 
 export default function LiveScreen() {
   const { m3uUrl } = useSettingsStore();
+  const router = useRouter();
 
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
@@ -94,6 +97,8 @@ export default function LiveScreen() {
   /** 重挂 LivePlayer 的序号：选了当前正在播的台时 index 不变，streamUrl 也不变，
    *  换 key 才能让播放器重新加载（重试坏台） */
   const [retrySeq, setRetrySeq] = useState(0);
+  /** 手动重载 m3u 的序号：加载失败后点“重试”时 +1，触发 loadChannels 重新跑 */
+  const [reloadSeq, setReloadSeq] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   /** 节目单数据（天光云影同款来源 ysp.ciweihaha.win/epg.xml） */
@@ -262,7 +267,16 @@ export default function LiveScreen() {
     };
     loadChannels();
     return () => { cancelled = true; };
-  }, [m3uUrl]);
+    // reloadSeq 只作重触发信号，effect 内不读它（与 retrySeq 同款用法）
+  }, [m3uUrl, reloadSeq]);
+
+  // 频道列表刷新后可能变短：当前索引越界时钳制到末尾，否则 currentChannel
+  // 为 undefined，selectedChannelUrl 为 null，播放器黑屏
+  useEffect(() => {
+    if (channels.length > 0 && currentChannelIndex >= channels.length) {
+      setCurrentChannelIndex(channels.length - 1);
+    }
+  }, [channels, currentChannelIndex]);
 
   // ---------- EPG 加载（与 m3u 同款：缓存秒显 + 后台刷新） ----------
 
@@ -526,9 +540,11 @@ export default function LiveScreen() {
         return;
       }
       // 失败页重试：当前台失败过且之后没成功过（failCount 未清零）时，
-      // OK 键重选当前台（同台换 key 重挂播放器）；平时 OK 键打开频道面板
+      // OK 键重选当前台（同台换 key 重挂播放器）；平时 OK 键打开频道面板。
+      // 但自动跳台已耗尽（failCount > MAX_AUTO_SKIP）时同台重试无意义，
+      // OK 改开面板让用户手动选台——否则 OK 永远被重试劫持，面板打不开。
       if (t === "select") {
-        if (failCountRef.current > 0) {
+        if (failCountRef.current > 0 && failCountRef.current <= MAX_AUTO_SKIP) {
           selectChannelByIndex(currentChannelIndex, channels);
         } else {
           openPanel();
@@ -557,7 +573,10 @@ export default function LiveScreen() {
   // ---------- 渲染：换台信息条 ----------
 
   const renderTempBar = () => {
-    if (!tempBar || isPanelVisible) return null;
+    if (!tempBar) return null;
+    // 面板打开时：频道信息条不显示（面板底部已有当前频道信息），但提示
+    // 消息必须显示——handlePlaybackError 在面板打开时只发消息不跳台，
+    // 原来这里直接 return null，消息被面板盖住用户永远看不到
     if (tempBar.kind === 'message') {
       return (
         <View style={dynamicStyles.tempBar}>
@@ -565,6 +584,7 @@ export default function LiveScreen() {
         </View>
       );
     }
+    if (isPanelVisible) return null;
     if (!currentChannel) return null;
     const now = currentProgrammesData?.now ?? null;
     const next = currentProgrammesData?.next ?? null;
@@ -771,13 +791,15 @@ export default function LiveScreen() {
               initialNumToRender={50}
               getItemLayout={(_data, index) => ({ length: 44, offset: 44 * index, index })}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => {
+              renderItem={({ item, index }) => {
                 const isCurrent = item.startAt <= nowMs && nowMs < item.endAt;
                 return (
                   <TouchableOpacity
                     onPress={closeEpgDialog}
                     onFocus={pokePanelTimer}
-                    hasTVPreferredFocus={isCurrent}
+                    // 没有“正在播”的节目时（EPG 不覆盖当前时刻），焦点落第一行：
+                    // 否则没有任何一行有首选焦点，电视上弹窗打开后焦点无处落
+                    hasTVPreferredFocus={isCurrent || (currentProgIndex < 0 && index === 0)}
                     activeOpacity={0.8}
                     style={[dynamicStyles.dialogRow, isCurrent && dynamicStyles.dialogRowCurrent]}
                   >
@@ -810,14 +832,50 @@ export default function LiveScreen() {
 
   const renderLiveContent = () => (
     <>
-      <LivePlayer
-        key={retrySeq}
-        streamUrl={selectedChannelUrl}
-        onPlaybackStatusUpdate={handlePlaybackStatus}
-        onPlaybackError={handlePlaybackError}
-        onRetry={() => selectChannelByIndex(currentChannelIndex, channels)}
-      />
-      {renderTempBar()}
+      {isLoading && channels.length === 0 ? (
+        <View style={dynamicStyles.emptyContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={dynamicStyles.emptyText}>正在加载直播源...</Text>
+        </View>
+      ) : channels.length === 0 ? (
+        // 没配 m3u 或拉取失败且无缓存：原来只剩 LivePlayer 的“按 OK 键选择
+        // 频道”，但一个频道都没有，OK 打开的也是空面板——给明确指引
+        <View style={dynamicStyles.emptyContainer}>
+          <Text style={dynamicStyles.emptyTitle}>
+            {!m3uUrl ? "未配置直播源" : "直播源加载失败"}
+          </Text>
+          <Text style={dynamicStyles.emptyText}>
+            {!m3uUrl
+              ? "请在 设置 → 直播源 中填写 M3U 地址"
+              : "请检查网络或 M3U 地址是否正确"}
+          </Text>
+          {!m3uUrl ? (
+            <StyledButton
+              text="去设置"
+              variant="primary"
+              onPress={() => router.push("/settings")}
+              style={dynamicStyles.emptyButton}
+              hasTVPreferredFocus
+            />
+          ) : (
+            <StyledButton
+              text="重试"
+              variant="primary"
+              onPress={() => setReloadSeq((s) => s + 1)}
+              style={dynamicStyles.emptyButton}
+              hasTVPreferredFocus
+            />
+          )}
+        </View>
+      ) : (
+        <LivePlayer
+          key={retrySeq}
+          streamUrl={selectedChannelUrl}
+          onPlaybackStatusUpdate={handlePlaybackStatus}
+          onPlaybackError={handlePlaybackError}
+          onRetry={() => selectChannelByIndex(currentChannelIndex, channels)}
+        />
+      )}
       {/* 触摸设备没有遥控器：右下角给一个开面板的按钮 */}
       {deviceType !== 'tv' && !isPanelVisible && (
         <TouchableOpacity onPress={openPanel} style={dynamicStyles.openPanelFab} activeOpacity={0.8}>
@@ -826,6 +884,8 @@ export default function LiveScreen() {
       )}
       {renderPanel()}
       {renderEpgDialog()}
+      {/* 提示消息放最后渲染，盖在面板之上（见 renderTempBar） */}
+      {renderTempBar()}
     </>
   );
 
@@ -1134,6 +1194,30 @@ const createResponsiveStyles = (
       color: "#fff",
       fontSize: 15,
       fontWeight: "bold",
+    },
+    // 无频道时的居中指引（未配 m3u / 拉取失败 / 加载中）
+    emptyContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#000",
+      paddingHorizontal: 32,
+    },
+    emptyTitle: {
+      color: "#fff",
+      fontSize: isTV ? 24 : 20,
+      fontWeight: "bold",
+      textAlign: "center",
+      marginBottom: 12,
+    },
+    emptyText: {
+      color: "#ccc",
+      fontSize: isTV ? 18 : 15,
+      textAlign: "center",
+      marginBottom: 24,
+    },
+    emptyButton: {
+      minWidth: 140,
     },
   });
 };

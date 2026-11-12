@@ -473,6 +473,12 @@ export default function HomeScreen() {
           <ThemedText type="subtitle" style={{ padding: spacing }}>
             {error}
           </ThemedText>
+          <StyledButton
+            text="重试"
+            variant="primary"
+            onPress={() => fetchInitialData()}
+            hasTVPreferredFocus
+          />
         </View>
       ) : (
         <Animated.View style={[dynamicStyles.contentContainer, { opacity: fadeAnim }]}>

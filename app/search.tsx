@@ -265,7 +265,10 @@ export default function SearchScreen() {
         <CustomScrollView
           data={results}
           renderItem={renderItem}
-          loading={loading}
+          // 有旧结果时不全屏转圈：旧卡片留着，只在底部转（loadingMore），
+          // 搜第二个词时不再白屏闪一下
+          loading={loading && results.length === 0}
+          loadingMore={loading && results.length > 0}
           error={error}
           emptyMessage="输入关键词开始搜索"
         />

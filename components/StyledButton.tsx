@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
 });
 
 export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
-  ({ children, text, variant = "default", isSelected = false, style, textStyle, ...rest }, ref) => {
+  ({ children, text, variant = "default", isSelected = false, style, textStyle, onFocus, onBlur, ...rest }, ref) => {
     const [isFocused, setIsFocused] = React.useState(false);
     const animationStyle = useButtonAnimation(isFocused);
     const deviceType = useResponsiveLayout().deviceType;
@@ -123,8 +123,11 @@ export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
         <Pressable
           android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
           ref={ref}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          // 调用方 onFocus/onBlur 与内部焦点动画并存：原来 {...rest} 展开在后，
+          // 调用方传了 onFocus 会直接覆盖内部的 setIsFocused，焦点动画失效
+          // （UpdateSection 即受害者）。这里显式组合两者。
+          onFocus={(e) => { setIsFocused(true); onFocus?.(e); }}
+          onBlur={(e) => { setIsFocused(false); onBlur?.(e); }}
           style={({ focused }) => [
             styles.button,
             variantStyles[variant].button,

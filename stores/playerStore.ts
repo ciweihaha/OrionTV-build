@@ -270,12 +270,17 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         url: ep,
         title: `第 ${index + 1} 集`,
       }));
+      // 集数钳制：切源时新源集数可能少于当前集（旧集号越界），不钳制会让
+      // selectCurrentEpisode 返回 undefined，播放页卡在假加载屏上。
+      const clampedEpisodeIndex = mappedEpisodes.length > 0
+        ? Math.min(Math.max(0, episodeIndex), mappedEpisodes.length - 1)
+        : episodeIndex;
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
       
       set({
         isLoading: false,
-        currentEpisodeIndex: episodeIndex,
+        currentEpisodeIndex: clampedEpisodeIndex,
         initialPosition: position ?? initialPositionFromRecord,
         playbackRate: savedPlaybackRate,
         episodes: mappedEpisodes,

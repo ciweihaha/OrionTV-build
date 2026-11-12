@@ -36,23 +36,22 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
       onChanged();
     };
 
-    const [selection, setSelection] = useState<{ start: number; end: number }>({
-      start: 0,
-      end: 0,
-    });
-    // 当用户手动移动光标或选中文本时，同步到 state（可选）
-    const onSelectionChange = ({
-      nativeEvent: { selection },
-    }: any) => {
-      setSelection(selection);
+    // 光标只用命令式 setNativeProps 移（focus 时与远程输入后）：受控的
+    // selection prop 会和 Android 输入法组词打架（IME 设组词区、React 又
+    // 把旧 selection 写回去，组词断裂/光标乱跳），所以不挂 selection prop。
+    const moveCursorToEnd = (length: number) => {
+      // 等一帧让文本先渲染上去再移光标
+      setTimeout(() => {
+        inputRef.current?.setNativeProps({ selection: { start: length, end: length } });
+      }, 0);
     };
 
     useImperativeHandle(ref, () => ({
       setInputValue: (value: string) => {
         setApiBaseUrl(value);
-        // 远程输入是整串替换，不经过 onSelectionChange：光标会留在旧位置，
-        // 之后在电视上接着打字会插到文本中间——直接移到末尾
-        setSelection({ start: value.length, end: value.length });
+        // 远程输入是整串替换：光标会留在旧位置，之后在电视上接着打字
+        // 会插到文本中间——直接移到末尾
+        moveCursorToEnd(value.length);
         onChanged();
       },
     }));
@@ -107,19 +106,9 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
               autoCorrect={false}
               onFocus={() => {
                 setIsInputFocused(true);
-                // 将光标移动到文本末尾
-                const end = apiBaseUrl.length;
-                setSelection({ start: end, end: end });
-                // 有时需要延迟一下，让系统先完成 focus 再设置 selection
-                //（在 Android 上更可靠）
-                setTimeout(() => {
-                  // 对于受控的 selection 已经生效，这里仅作保险
-                  inputRef.current?.setNativeProps({ selection: { start: end, end: end } });
-                }, 0);
+                // 将光标移动到文本末尾（命令式，不挂受控 selection，见上）
+                moveCursorToEnd(apiBaseUrl.length);
               }}
-              selection={selection}
-              onSelectionChange={onSelectionChange} // 可选
-
               onBlur={() => setIsInputFocused(false)}
             />
           </Animated.View>

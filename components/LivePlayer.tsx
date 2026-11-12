@@ -147,7 +147,13 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
         {/* 之前只有一句“请重试”，没有任何可点的重试入口：自动跳台耗尽后
             只能凭提示 toast 摸索左右键换台；给一个可聚焦的重试按钮 */}
         {onRetry && (
-          <StyledButton text="重试" onPress={onRetry} style={styles.retryButton} />
+          <StyledButton
+            text="重试"
+            onPress={onRetry}
+            style={styles.retryButton}
+            // 电视上失败页打开时把焦点拉到重试按钮：否则焦点无处落，OK 按不到
+            hasTVPreferredFocus
+          />
         )}
       </View>
     );
