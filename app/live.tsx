@@ -76,6 +76,72 @@ function formatProgrammeTime(ts: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+interface ChannelCardProps {
+  item: Channel;
+  isFavRow: boolean;
+  isCurrent: boolean;
+  isFocused: boolean;
+  isFav: boolean;
+  now?: { title: string; progress: number };
+  styles: ReturnType<typeof createResponsiveStyles>;
+  onSelect: (channel: Channel) => void;
+  onToggleFav: (channel: Channel) => void;
+  onFocusCard: (channel: Channel) => void;
+}
+
+// 频道卡片（memo，模块级）：面板每次焦点移动都重渲染，旧版 renderChannelCard
+// 是普通函数，所有可见卡片跟着全量重渲染。memo 后只有 isFocused/isCurrent/
+// isFav/now 变化的卡片重渲染；now 每 30 秒 tick 才换引用，焦点移动不影响它。
+const ChannelCard = React.memo(function ChannelCard({
+  item,
+  isFavRow,
+  isCurrent,
+  isFocused,
+  isFav,
+  now,
+  styles,
+  onSelect,
+  onToggleFav,
+  onFocusCard,
+}: ChannelCardProps) {
+  return (
+    <TouchableOpacity
+      onPress={() => onSelect(item)}
+      onLongPress={() => onToggleFav(item)}
+      onFocus={() => onFocusCard(item)}
+      // 当前台同时在收藏行和所属分组行出现：首选焦点只给所属分组那张卡，
+      // 否则两张卡都抢焦点，落点不确定
+      hasTVPreferredFocus={isCurrent && !isFavRow}
+      activeOpacity={0.8}
+      style={[
+        styles.channelCard,
+        isCurrent && styles.channelCardCurrent,
+        isFocused && styles.channelCardFocused,
+      ]}
+    >
+      <View style={styles.channelCardText}>
+        <Text
+          numberOfLines={1}
+          style={[styles.channelCardName, isFocused && styles.channelCardTextFocused]}
+        >
+          {isFav ? `★ ${item.name}` : item.name}
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={[styles.channelCardProgramme, isFocused && styles.channelCardTextFocused]}
+        >
+          {now?.title ?? ""}
+        </Text>
+      </View>
+      {now && (
+        <View style={styles.cardProgressTrack}>
+          <View style={[isFocused ? styles.progressFillLight : styles.progressFill, { width: `${now.progress * 100}%` }]} />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
+
 export default function LiveScreen() {
   const m3uUrl = useSettingsStore((s) => s.m3uUrl);
   const router = useRouter();
@@ -90,6 +156,12 @@ export default function LiveScreen() {
   const [groupedChannels, setGroupedChannels] = useState<Record<string, Channel[]>>({});
   const [channelGroups, setChannelGroups] = useState<string[]>([]);
   const [favChannels, setFavChannels] = useState<LiveLastChannel[]>([]);
+  // 收藏 URL 集合：原来每张卡每渲染都 favChannels.some() 一次（O(收藏数)），
+  // 面板每 30 秒 tick + 每次焦点移动都全量重算；Set 查一次 O(1)
+  const favUrlSet = useMemo(
+    () => new Set(favChannels.map((f) => f.url)),
+    [favChannels]
+  );
 
   const [currentChannelIndex, setCurrentChannelIndex] = useState(0);
   /** 当前频道的线路下标（同名多地址频道合并而来，左右键切换） */
@@ -348,13 +420,13 @@ export default function LiveScreen() {
     saveLastChannel(list[index]);
   }, [currentChannelIndex, showChannelTempBar, saveLastChannel]);
 
-  const handleSelectChannel = (channel: Channel) => {
+  const handleSelectChannel = useCallback((channel: Channel) => {
     const globalIndex = channels.findIndex((c) => c.id === channel.id);
     if (globalIndex !== -1) {
       selectChannelByIndex(globalIndex, channels);
       closePanel();
     }
-  };
+  }, [channels, selectChannelByIndex, closePanel]);
 
   const changeChannel = useCallback(
     (direction: "next" | "prev", isAutoSkip = false) => {
@@ -648,48 +720,33 @@ export default function LiveScreen() {
 
   // ---------- 渲染：频道卡片（台名 + 正在播的节目 + 进度条） ----------
 
-  const renderChannelCard = ({ item, isFavRow }: { item: Channel; isFavRow: boolean }) => {
-    const isCurrent = currentChannel?.id === item.id;
-    const isFocused = focusedChannel?.id === item.id;
-    const isFav = favChannels.some((f) => f.url === item.url);
-    const now = epgNowById[item.id];
+  // 卡片获焦回调：稳定引用，ChannelCard memo 的 prop 之一（内联箭头会
+  // 让 memo 每渲染都失效）
+  const handleFocusCard = useCallback((ch: Channel) => {
+    setFocusedChannel(ch);
+    pokePanelTimer();
+  }, [pokePanelTimer]);
+
+  // 频道卡片（memo）：面板每次焦点移动都会重渲染，旧 renderChannelCard 是
+  // 普通函数，所有可见卡片跟着全量重渲染（遥控器按一下卡一下）。抽成 memo
+  // 组件后只有 isFocused/isCurrent 变化的卡片重渲染；onPress 等内联箭头
+  // 在组件内部，不影响 memo 的 props 比较。
+  const renderChannelCard = useCallback(({ item, isFavRow }: { item: Channel; isFavRow: boolean }) => {
     return (
-      <TouchableOpacity
-        onPress={() => handleSelectChannel(item)}
-        onLongPress={() => toggleFavChannelItem(item)}
-        onFocus={() => { setFocusedChannel(item); pokePanelTimer(); }}
-        // 当前台同时在收藏行和所属分组行出现：首选焦点只给所属分组那张卡，
-        // 否则两张卡都抢焦点，落点不确定
-        hasTVPreferredFocus={isCurrent && !isFavRow}
-        activeOpacity={0.8}
-        style={[
-          dynamicStyles.channelCard,
-          isCurrent && dynamicStyles.channelCardCurrent,
-          isFocused && dynamicStyles.channelCardFocused,
-        ]}
-      >
-        <View style={dynamicStyles.channelCardText}>
-          <Text
-            numberOfLines={1}
-            style={[dynamicStyles.channelCardName, isFocused && dynamicStyles.channelCardTextFocused]}
-          >
-            {isFav ? `★ ${item.name}` : item.name}
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={[dynamicStyles.channelCardProgramme, isFocused && dynamicStyles.channelCardTextFocused]}
-          >
-            {now?.title ?? ""}
-          </Text>
-        </View>
-        {now && (
-          <View style={dynamicStyles.cardProgressTrack}>
-            <View style={[isFocused ? dynamicStyles.progressFillLight : dynamicStyles.progressFill, { width: `${now.progress * 100}%` }]} />
-          </View>
-        )}
-      </TouchableOpacity>
+      <ChannelCard
+        item={item}
+        isFavRow={isFavRow}
+        isCurrent={currentChannel?.id === item.id}
+        isFocused={focusedChannel?.id === item.id}
+        isFav={favUrlSet.has(item.url)}
+        now={epgNowById[item.id]}
+        styles={dynamicStyles}
+        onSelect={handleSelectChannel}
+        onToggleFav={toggleFavChannelItem}
+        onFocusCard={handleFocusCard}
+      />
     );
-  };
+  }, [currentChannel, focusedChannel, favUrlSet, epgNowById, dynamicStyles, handleSelectChannel, toggleFavChannelItem, handleFocusCard]);
 
   // ---------- 渲染：频道面板（天光云影新面板同款） ----------
   // 全屏半透明遮罩；右上角台号 + 日期时间；底部当前频道信息 +

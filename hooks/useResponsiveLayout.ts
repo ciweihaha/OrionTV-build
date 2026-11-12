@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dimensions, Platform } from "react-native";
 import type { ScaledSize } from "react-native";
 
@@ -95,7 +95,13 @@ export const useResponsiveLayout = (): ResponsiveConfig => {
   const isPortrait = height > width;
   const deviceType = getDeviceType(width);
 
-  return getLayoutConfig(deviceType, width, height, isPortrait);
+  // 配置对象只在尺寸/方向/设备类型变化时重建：原来每次渲染都 new 一个，
+  // 下游的 getCommonResponsiveStyles / StyleSheet.create / 各 useMemo
+  // 全跟着重算（首页每次渲染都重建一整套样式表）。
+  return useMemo(
+    () => getLayoutConfig(deviceType, width, height, isPortrait),
+    [deviceType, width, height, isPortrait]
+  );
 };
 
 // Utility hook for responsive styles

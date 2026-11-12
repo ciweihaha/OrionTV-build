@@ -44,6 +44,44 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
 
+  // 动态样式：只在布局配置或回顶按钮显隐变化时重建。原来每次渲染都
+  // StyleSheet.create 一整套（滚动时 handleScroll 触发的 setState 很频繁）。
+  const dynamicStyles = React.useMemo(() => StyleSheet.create({
+    listContent: {
+      paddingBottom: responsiveConfig.spacing * 2,
+      paddingHorizontal: responsiveConfig.spacing / 2,
+    },
+    rowContainer: {
+      flexDirection: "row",
+      marginBottom: responsiveConfig.spacing,
+    },
+    fullRowContainer: {
+      justifyContent: "space-around",
+      marginRight: responsiveConfig.spacing / 2,
+    },
+    partialRowContainer: {
+      justifyContent: "flex-start",
+    },
+    itemContainer: {
+      width: responsiveConfig.cardWidth,
+    },
+    itemWithMargin: {
+      width: responsiveConfig.cardWidth,
+      marginRight: responsiveConfig.spacing,
+    },
+    scrollToTopButton: {
+      position: 'absolute',
+      right: responsiveConfig.spacing,
+      bottom: responsiveConfig.spacing * 2,
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      padding: responsiveConfig.spacing,
+      borderRadius: responsiveConfig.spacing,
+      opacity: showScrollToTop ? 1 : 0,
+      // 透明时不拦截触摸：opacity 0 的按钮仍会吃掉点击，遮住下面的卡片
+      pointerEvents: (showScrollToTop ? 'auto' : 'none') as 'auto' | 'none',
+    },
+  }), [responsiveConfig, showScrollToTop]);
+
   // 组件卸载时清掉 scrollToTop 的延时，避免已卸载后还去 focus 第一个卡片
   useEffect(() => {
     return () => {
@@ -161,42 +199,6 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 
   const rows = groupItemsByRow(data, effectiveColumns);
 
-  // 动态样式
-  const dynamicStyles = StyleSheet.create({
-    listContent: {
-      paddingBottom: responsiveConfig.spacing * 2,
-      paddingHorizontal: responsiveConfig.spacing / 2,
-    },
-    rowContainer: {
-      flexDirection: "row",
-      marginBottom: responsiveConfig.spacing,
-    },
-    fullRowContainer: {
-      justifyContent: "space-around",
-      marginRight: responsiveConfig.spacing / 2,
-    },
-    partialRowContainer: {
-      justifyContent: "flex-start",
-    },
-    itemContainer: {
-      width: responsiveConfig.cardWidth,
-    },
-    itemWithMargin: {
-      width: responsiveConfig.cardWidth,
-      marginRight: responsiveConfig.spacing,
-    },
-    scrollToTopButton: {
-      position: 'absolute',
-      right: responsiveConfig.spacing,
-      bottom: responsiveConfig.spacing * 2,
-      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-      padding: responsiveConfig.spacing,
-      borderRadius: responsiveConfig.spacing,
-      opacity: showScrollToTop ? 1 : 0,
-      // 透明时不拦截触摸：opacity 0 的按钮仍会吃掉点击，遮住下面的卡片
-      pointerEvents: (showScrollToTop ? 'auto' : 'none') as 'auto' | 'none',
-    },
-  });
 
   return (
     <View style={{ flex: 1 }}>
@@ -247,4 +249,4 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   );
 };
 
-export default CustomScrollView;
+export default React.memo(CustomScrollView);
