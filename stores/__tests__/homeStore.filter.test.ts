@@ -62,6 +62,12 @@ const YEAR_2024 = aggResponse([
 const HK_2024 = aggResponse([
   { id: "hy1", name: "香港2024影片", area: "香港", year: "2024" },
 ]);
+// 窄筛选组合首屏 0 条（2026-11-12 实测：area=英国&year=2020 返回空列表）。
+const EMPTY = aggResponse([]);
+// 豆瓣回落返回的内容：无筛选时 agg 空列表应回落到它。
+const DOUBAN_FALLBACK = {
+  list: [{ title: "豆瓣影片A", cover: "", rate: "", year: "" }],
+};
 
 async function waitFor(fn: () => boolean, timeoutMs = 3000): Promise<void> {
   const start = Date.now();
@@ -75,6 +81,7 @@ async function waitFor(fn: () => boolean, timeoutMs = 3000): Promise<void> {
 describe("homeStore 筛选流程复现（用户报：怎么筛都是同样的页面）", () => {
   let useHomeStore: any;
   let getAggMock: jest.Mock;
+  let getDoubanMock: jest.Mock;
 
   beforeEach(() => {
     jest.resetModules();
@@ -84,10 +91,13 @@ describe("homeStore 筛选流程复现（用户报：怎么筛都是同样的页
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const freshApi = require("@/services/api").api;
     getAggMock = freshApi.getAggCategory as jest.Mock;
+    getDoubanMock = freshApi.getDoubanData as jest.Mock;
+    getDoubanMock.mockResolvedValue(DOUBAN_FALLBACK);
     getAggMock.mockImplementation((_t: number, _pg: number, filters?: any) => {
       if (filters?.area === "香港" && filters?.year === "2024") return Promise.resolve(HK_2024);
       if (filters?.area === "香港") return Promise.resolve(HK_ONLY);
       if (filters?.year === "2024") return Promise.resolve(YEAR_2024);
+      if (filters?.area === "英国") return Promise.resolve(EMPTY);
       return Promise.resolve(UNFILTERED);
     });
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -227,5 +237,71 @@ describe("homeStore 筛选流程复现（用户报：怎么筛都是同样的页
     resolveAgg(UNFILTERED);
     await waitFor(() => useHomeStore.getState().loading === false);
     expect(useHomeStore.getState().cmsFilterAvailable).toBe(true);
+  });
+
+  it("筛选后 agg 首屏返回空列表：不回落豆瓣，显示空列表、筛选行保留", async () => {
+    const store = useHomeStore.getState();
+    const movie = store.categories.find((c: any) => c.title === "电影");
+    store.selectCategory(movie);
+    await waitFor(
+      () =>
+        JSON.stringify(useHomeStore.getState().contentData.map((i: any) => i.title)) ===
+        JSON.stringify(["未筛影片A", "未筛影片B"]),
+    );
+
+    // 点地区=英国：服务端该筛选首屏 0 条（实测窄组合行为），是合法结果。
+    const callsBefore = getAggMock.mock.calls.length;
+    useHomeStore.getState().setRegionFilter("英国");
+    await waitFor(() => getAggMock.mock.calls.length > callsBefore);
+    await waitFor(() => useHomeStore.getState().loading === false);
+
+    const state = useHomeStore.getState();
+    expect(state.contentData).toEqual([]);
+    expect(state.hasMore).toBe(false);
+    expect(state.error).toBeNull();
+    // 筛选行还在，用户可直接改筛选；没有回落豆瓣。
+    expect(state.cmsFilterAvailable).toBe(true);
+    expect(getDoubanMock).not.toHaveBeenCalled();
+  });
+
+  it("筛选后 agg 请求失败：不回落豆瓣，显示错误、筛选行保留", async () => {
+    const store = useHomeStore.getState();
+    const movie = store.categories.find((c: any) => c.title === "电影");
+    store.selectCategory(movie);
+    await waitFor(
+      () =>
+        JSON.stringify(useHomeStore.getState().contentData.map((i: any) => i.title)) ===
+        JSON.stringify(["未筛影片A", "未筛影片B"]),
+    );
+
+    getAggMock.mockImplementationOnce(() =>
+      Promise.reject(new Error("Network request failed")),
+    );
+    const callsBefore = getAggMock.mock.calls.length;
+    useHomeStore.getState().setRegionFilter("香港");
+    await waitFor(() => getAggMock.mock.calls.length > callsBefore);
+    await waitFor(() => useHomeStore.getState().loading === false);
+
+    const state = useHomeStore.getState();
+    expect(state.error).toBe("网络连接失败，请检查网络连接");
+    expect(state.cmsFilterAvailable).toBe(true);
+    expect(getDoubanMock).not.toHaveBeenCalled();
+  });
+
+  it("无筛选时 agg 首屏空列表：仍回落豆瓣（回归，现有行为不变）", async () => {
+    // 首次进分类即空列表：无筛选，空列表仍按异常处理，走豆瓣回落。
+    getAggMock.mockImplementationOnce(() => Promise.resolve(EMPTY));
+    const store = useHomeStore.getState();
+    const movie = store.categories.find((c: any) => c.title === "电影");
+    store.selectCategory(movie);
+    await waitFor(
+      () =>
+        JSON.stringify(useHomeStore.getState().contentData.map((i: any) => i.title)) ===
+        JSON.stringify(["豆瓣影片A"]),
+    );
+
+    const state = useHomeStore.getState();
+    expect(state.cmsFilterAvailable).toBe(false);
+    expect(getDoubanMock).toHaveBeenCalled();
   });
 });

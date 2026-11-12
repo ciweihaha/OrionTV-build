@@ -326,20 +326,39 @@ const useHomeStore = create<HomeState>((set, get) => ({
           });
         };
 
+        // 筛选已选时 agg 失败/空列表不再回落豆瓣：筛选是服务端做的，
+        // 窄组合（如 英国+2020）首屏确实可能 0 条——回落会显示未筛的豆瓣
+        // 内容并把 cmsFilterAvailable 置 false 卸掉筛选行，用户看到的就是
+        // “点了筛选，列表没变，筛选行还消失了”。无筛选时保持回落。
+        const hasActiveFilter = !!(loadRegion || loadYear);
+
         let result;
         try {
           result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter));
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
-          if (nextPg === 1) {
+          if (nextPg === 1 && !hasActiveFilter) {
             await fallbackToDouban();
             return;
           }
           throw aggError;
         }
-        // agg 成功但首屏空列表 = 异常（CMS 大类按 agg 设计“宁可多不可空”），走回落。
+        // agg 成功但首屏空列表：无筛选时是异常（CMS 大类按 agg 设计
+        // “宁可多不可空”），走回落；有筛选时是合法结果（窄组合确实没片），
+        // 显示空状态、保留筛选行，用户可直接改筛选，不回落豆瓣。
         if (result.list.length === 0 && nextPg === 1) {
+          if (hasActiveFilter) {
+            set({
+              contentData: [],
+              pageStart: 0,
+              aggPage: 1,
+              hasMore: false,
+              error: null,
+              cmsFilterAvailable: true,
+            });
+            return;
+          }
           await fallbackToDouban();
           return;
         }
