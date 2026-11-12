@@ -22,6 +22,14 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // V1.5：每个 streamUrl 只上报一次错误，避免上层重复跳台
   const errorReportedForRef = useRef<string | null>(null);
+  // 最新错误回调的 ref：上层 handlePlaybackError 的依赖含 isPanelVisible，
+  // 面板开关会改变其身份；但本组件的两个 effect 只依赖 streamUrl/player，
+  // 面板开关不重跑，直接调 prop 会拿到过期闭包（isPanelVisible 恒为流开始
+  // 加载时的 false），面板打开时仍自动跳台。ref 每渲染更新一次，
+  // reportErrorOnce 永远调最新版本；不把 onPlaybackError 加进 effect 依赖，
+  // 否则超时 effect 会在面板开关时重 arm，拖延超时判定。
+  const onPlaybackErrorRef = useRef(onPlaybackError);
+  onPlaybackErrorRef.current = onPlaybackError;
   useKeepAwake();
 
   // expo-video player: source changes auto-replace via replaceAsync.
@@ -30,7 +38,7 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
   const reportErrorOnce = (url: string | null) => {
     if (!url || errorReportedForRef.current === url) return;
     errorReportedForRef.current = url;
-    onPlaybackError?.();
+    onPlaybackErrorRef.current?.();
   };
 
   useEffect(() => {
@@ -60,8 +68,8 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
         clearTimeout(timeoutRef.current);
       }
     };
-    // reportErrorOnce 仅读 ref 与 prop，语义上随 streamUrl 变化即可，无需入列（每次变化重置一次）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // reportErrorOnce 仅读 ref（onPlaybackError 走 onPlaybackErrorRef），
+    // 语义上随 streamUrl 变化即可，无需入列（每次变化重置一次）
   }, [streamUrl]);
 
   // Bridge expo-video player events to the PlaybackStatus shape the
@@ -128,7 +136,9 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
     return () => {
       subs.forEach((s) => s.remove());
     };
-    // onPlaybackStatusUpdate is a stable parent callback; re-subscribe per player/stream.
+    // onPlaybackStatusUpdate is a stable parent callback (empty deps); re-subscribe per player/stream.
+    // onPlaybackError is NOT stable (its deps include isPanelVisible) — it is read via
+    // onPlaybackErrorRef, so the effects never capture a stale closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player, streamUrl]);
 
