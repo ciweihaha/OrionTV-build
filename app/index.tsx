@@ -466,7 +466,16 @@ export default function HomeScreen() {
             error={error}
             onEndReached={loadMoreData}
             loadMoreThreshold={LOAD_MORE_THRESHOLD}
-            emptyMessage={isCmsCategory ? "该分类下暂无内容" : (selectedCategory?.tags ? "请选择一个子分类" : "该分类下暂无内容")}
+            emptyMessage={
+              isCmsCategory
+                ? // 筛选后 0 条是合法结果（窄组合确实没片）：说清原因，用户才知道换筛选就有。
+                  regionFilter || yearFilter
+                  ? "没有符合筛选条件的内容，换个筛选试试"
+                  : "该分类下暂无内容"
+                : selectedCategory?.tags
+                  ? "请选择一个子分类"
+                  : "该分类下暂无内容"
+            }
             ListFooterComponent={renderFooter}
           />
         </Animated.View>
