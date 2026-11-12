@@ -3,10 +3,14 @@ import { View, Switch, StyleSheet, Animated, Platform, TouchableOpacity , useTVE
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { SettingsManager } from "@/services/storage";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { useButtonAnimation } from "@/hooks/useAnimation";
 import { Colors } from "@/constants/Colors";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { Logger } from "@/utils/Logger";
+
+const logger = Logger.withTag("RemoteInputSection");
 
 interface RemoteInputSectionProps {
   onChanged: () => void;
@@ -25,6 +29,13 @@ export const RemoteInputSection: React.FC<RemoteInputSectionProps> = ({ onChange
   const handleToggle = useCallback(
     (enabled: boolean) => {
       setRemoteInputEnabled(enabled);
+      // 即时持久化：开关立即启停服务（_layout effect），只写 store 的话
+      // 不点“保存设置”直接退出，下次进设置页 loadSettings 会用磁盘值
+      // 覆盖，开关静默 revert。save 接受 Partial，内部读现值合并，不动
+      // 表单里未保存的其他改动（如正在输入的服务器地址）。
+      void SettingsManager.save({ remoteInputEnabled: enabled }).catch((error) => {
+        logger.warn("远程输入开关即时保存失败:", error);
+      });
       onChanged();
     },
     [setRemoteInputEnabled, onChanged]

@@ -76,7 +76,10 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, q: title },
+          // 带上 id：detailStore 的 preferred-source 快路径要求
+          // (preferredSource && id)，不传时卡片入口恒走全量扇出搜索，
+          // 更慢且默认详情不一定是卡片所示的源
+          params: { source, q: title, id },
         });
       }
     };

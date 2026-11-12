@@ -599,6 +599,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     loadVideoSeq++;
     handlingErrorUrl = null;
     set({
+      videoPlayer: null, // 卸载后不再捏着已释放的 player 引用
       episodes: [],
       currentEpisodeIndex: 0,
       status: null,

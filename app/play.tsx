@@ -245,9 +245,16 @@ export default function PlayScreen() {
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    // 剧集列表未就绪时重 arm 的次数上限：loadVideo 的详情初始化预算可达
+    // 60 秒（SEARCH_TIMEOUT），20 秒就判超时是误报；最多重 arm 3 次
+    //（80 秒，覆盖初始化预算 + 余量），之后仍无剧集才判超时
+    let rearms = 0;
+    const MAX_REARMS = 3;
 
-    if (isLoading) {
+    const armTimeout = () => {
       timeoutId = setTimeout(() => {
+        if (cancelled) return;
         const state = usePlayerStore.getState();
         if (!state.isLoading) return;
         // 20s 还没就绪：当作网络失败走自动换源（与 error 事件共用
@@ -255,14 +262,26 @@ export default function PlayScreen() {
         const ep = selectCurrentEpisode(state);
         if (ep?.url) {
           state.handleVideoError('network', ep.url);
+        } else if (rearms < MAX_REARMS) {
+          // 剧集列表还没就绪：loadVideo 的详情初始化还在跑，20 秒判超时
+          // 是误报（随后 loadVideo 照常完成、视频正常播出）。重 arm 一次，
+          // 等初始化完成后再判；不是无条件跳过——初始化自身的超时会让
+          // loadVideo 抛错清 isLoading，真挂住时重 arm 耗尽后仍会判超时。
+          rearms += 1;
+          armTimeout();
         } else {
           usePlayerStore.setState({ isLoading: false });
           Toast.show({ type: "error", text1: "播放超时，请重试" });
         }
       }, 20000); // 20 秒（V1.5：60s 太久，黑屏干等体验差）
+    };
+
+    if (isLoading) {
+      armTimeout();
     }
 
     return () => {
+      cancelled = true;
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
