@@ -693,9 +693,15 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         return;
       }
 
+      // await 期间用户可能已通过选集弹窗切到更靠后的集（playEpisode 不
+      // bump 代次，上面拦不住）：用 await 后的新集号重新校验，否则回落
+      // 源的短列表 + 新集号越界，selectCurrentEpisode 返回 undefined，
+      // 播放页钉死在 isLoading=false 的假加载屏上、无自动恢复
+      const freshEpisodeIndex = get().currentEpisodeIndex;
+
       // 重新加载当前集数的episodes
       const newEpisodes = fallbackSource.episodes || [];
-      if (newEpisodes.length > currentEpisodeIndex) {
+      if (newEpisodes.length > freshEpisodeIndex) {
         const mappedEpisodes = newEpisodes.map((ep, index) => ({
           url: ep,
           title: `第 ${index + 1} 集`,
@@ -714,7 +720,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         
         const perfEnd = performance.now();
         logger.info(`[VIDEO_ERROR] Successfully switched to fallback source in ${(perfEnd - perfStart).toFixed(2)}ms`);
-        logger.info(`[VIDEO_ERROR] New episode URL: ${newEpisodes[currentEpisodeIndex].substring(0, 100)}...`);
+        logger.info(`[VIDEO_ERROR] New episode URL: ${newEpisodes[freshEpisodeIndex].substring(0, 100)}...`);
         
         Toast.show({ 
           type: "success", 
@@ -722,7 +728,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           text2: `正在使用 ${fallbackSource.source_name}` 
         });
       } else {
-        logger.error(`[VIDEO_ERROR] Fallback source doesn't have episode ${currentEpisodeIndex + 1}`);
+        logger.error(`[VIDEO_ERROR] Fallback source doesn't have episode ${freshEpisodeIndex + 1}`);
         set({ isLoading: false });
       }
     } catch (error) {

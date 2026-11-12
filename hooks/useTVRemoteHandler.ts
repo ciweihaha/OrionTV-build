@@ -24,6 +24,7 @@ export const useTVRemoteHandler = () => {
   const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
   const showSourceModal = usePlayerStore((s) => s.showSourceModal);
   const showSpeedModal = usePlayerStore((s) => s.showSpeedModal);
+  const showNextEpisodeOverlay = usePlayerStore((s) => s.showNextEpisodeOverlay);
   const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
   const seek = usePlayerStore((s) => s.seek);
 
@@ -72,13 +73,14 @@ export const useTVRemoteHandler = () => {
 
   // 任一弹窗打开时若正在长按快进，把 interval 停掉：正常流程松键时会清掉，
   // 但松键事件一旦丢失，interval 会一直每 300ms 快进下去
-  // （第 5 轮只守了选集弹窗，选源/倍速弹窗同理：都是按键打开的）
+  // （第 5 轮只守了选集弹窗，选源/倍速弹窗同理：都是按键打开的；
+  // 下一集预告浮层同理：它自动弹出，松键事件同样可能丢失）
   useEffect(() => {
-    if ((showEpisodeModal || showSourceModal || showSpeedModal) && fastForwardIntervalRef.current) {
+    if ((showEpisodeModal || showSourceModal || showSpeedModal || showNextEpisodeOverlay) && fastForwardIntervalRef.current) {
       clearInterval(fastForwardIntervalRef.current);
       fastForwardIntervalRef.current = null;
     }
-  }, [showEpisodeModal, showSourceModal, showSpeedModal]);
+  }, [showEpisodeModal, showSourceModal, showSpeedModal, showNextEpisodeOverlay]);
 
   // 处理遥控器事件
   const handleTVEvent = useCallback(
@@ -87,7 +89,10 @@ export const useTVRemoteHandler = () => {
       // 焦点在弹窗里移动的同时视频也在快进（选集弹窗第 5 轮已守，
       // 选源/倍速弹窗同理——控制条 5 秒自动隐藏后 showControls 为 false，
       // 只靠下面的 showControls 判断是拦不住的）
-      if (showEpisodeModal || showSourceModal || showSpeedModal) {
+      // 下一集预告浮层同理：焦点被 hasTVPreferredFocus 拉到“立即播放”
+      // 按钮，OK 会同时触发按钮 onPress（playEpisode）和这里的
+      // togglePlayPause（新一集刚起播就被暂停），左右键同时 seek。
+      if (showEpisodeModal || showSourceModal || showSpeedModal || showNextEpisodeOverlay) {
         return;
       }
 
@@ -159,7 +164,7 @@ export const useTVRemoteHandler = () => {
           break;
       }
     },
-    [showControls, isProgressBarFocused, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [showControls, isProgressBarFocused, showEpisodeModal, showSourceModal, showSpeedModal, showNextEpisodeOverlay, setShowControls, resetTimer, togglePlayPause, seek]
   );
 
   useTVEventHandler(handleTVEvent);
