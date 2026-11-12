@@ -60,6 +60,7 @@ jest.mock("@/utils/Logger", () => {
 });
 
 const apiLoginMock = api.login as jest.Mock;
+const apiLogoutMock = api.logout as jest.Mock;
 const credsGetMock = LoginCredentialsManager.get as jest.Mock;
 const asyncRemoveMock = AsyncStorage.removeItem as jest.Mock;
 
@@ -178,5 +179,35 @@ describe("authStore.restoreSession（401 自动恢复的登录端）", () => {
     // “已登出但无入口重登”状态直到冷启动。
     expect(useAuthStore.getState().isLoggedIn).toBe(false);
     expect(useAuthStore.getState().isLoginModalVisible).toBe(true);
+  });
+
+  it("第 22 轮 Low-1：退出竞态下在飞登录成功后撤销副作用（再调一次 logout 清标记）", async () => {
+    credsGetMock.mockResolvedValue({ username: "u", password: "p" });
+    let release!: (v: { ok: boolean }) => void;
+    apiLoginMock.mockImplementation(
+      () =>
+        new Promise<{ ok: boolean }>((res) => {
+          release = res;
+        }),
+    );
+    apiLogoutMock.mockResolvedValue(undefined);
+
+    const restoreP = useAuthStore.getState().restoreSession();
+    // 等登录 mock 真被调用（release 已赋值）再点退出
+    for (let i = 0; i < 50 && apiLoginMock.mock.calls.length === 0; i++) {
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    }
+    expect(apiLoginMock).toHaveBeenCalledTimes(1);
+
+    // 登录还在飞时点退出（logout 调一次 api.logout 清标记）
+    await useAuthStore.getState().logout();
+    expect(apiLogoutMock).toHaveBeenCalledTimes(1);
+
+    // 在飞的登录成功返回：代次已变，不写登录态，且再调一次 logout 撤销副作用
+    //（api.login 已重写 authCookies 标记，只拦 set 的话下次冷启动又自动登录）。
+    release({ ok: true });
+    await restoreP;
+    expect(useAuthStore.getState().isLoggedIn).toBe(false);
+    expect(apiLogoutMock).toHaveBeenCalledTimes(2);
   });
 });
