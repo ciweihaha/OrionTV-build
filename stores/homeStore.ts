@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import { api, SearchResult, PlayRecord } from "@/services/api";
+import { api, SearchResult, PlayRecord, isCancelError } from "@/services/api";
 import type { AggVideoItem } from "@/services/api";
 import { buildAggFilterParams } from "@/utils/categoryFilters";
 import { PlayRecordManager, parseRecordKey } from "@/services/storage";
+import { storageConfig } from "@/services/storageConfig";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
 import { Logger } from "@/utils/Logger";
@@ -280,7 +281,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
     try {
       if (selectedCategory.type === "record") {
         const { isLoggedIn } = useAuthStore.getState();
-        if (!isLoggedIn) {
+        // 本地模式不要求登录：记录在 AsyncStorage 里，未配服务器/登录过期
+        // 时也应可见（M3 只修了数据层回落，这层门控没区分存储类型）。
+        // 只有服务端存储（redis）才必须登录。
+        if (storageConfig.getStorageType() !== "localstorage" && !isLoggedIn) {
           set({ contentData: [], hasMore: false });
           return;
         }
@@ -428,6 +432,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggPage: 1,
             hasMore: nextHasMore,
             cmsFilterAvailable: true,
+            error: null,
           });
         } else {
           const existingCache = dataCache.get(cacheKey);
@@ -469,6 +474,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               aggPage: nextPg,
               hasMore: nextHasMore,
               cmsFilterAvailable: true,
+              error: null,
             };
           });
         }
@@ -524,6 +530,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             contentData: newItems, // 使用完整的新数据
             pageStart: newItems.length,
             hasMore: result.list.length !== 0,
+            error: null,
           });
         } else {
           // 增量加载时更新缓存
@@ -562,6 +569,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               contentData: [...state.contentData, ...deduped],
               pageStart: state.pageStart + deduped.length,
               hasMore: result.list.length !== 0,
+              error: null,
             };
           });
         }
@@ -574,6 +582,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
     } catch (err: any) {
       // 分类已变：旧请求的错误不写给新分类
       if (isStale()) return;
+      // 被取消的请求不写 error：同一切换会触发两次 fetchInitialData
+      //（selectCategory + index effect），第二次会取消第一次；第一次的
+      // AbortError 若写成“加载失败”，第二次成功后 error 还残留，首页
+      // 显示报错屏、内容其实已加载成功
+      if (loadSignal.aborted || isCancelError(err)) return;
       // 归一化：抛出的不一定是 Error（如字符串），直接读 err.message.includes
       // 会在 catch 块内再抛 TypeError；非 Error 一律按空消息处理，走默认文案
       const msg = err instanceof Error ? err.message : "";
@@ -707,7 +720,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
     if (!apiBaseUrl) return;
     await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
     const { isLoggedIn } = useAuthStore.getState();
-    if (!isLoggedIn) {
+    // 本地模式不要求登录（同 loadMoreData record 分支）：未登录时删掉
+    // “最近播放”分类，本地记录就永远看不到了
+    if (storageConfig.getStorageType() !== "localstorage" && !isLoggedIn) {
       // updater 应为纯函数：selectCategory（含嵌套 set 与异步加载）不能在
       // updater 内调，时序脆弱；先算新分类，set 之后再切（分类为空时不切）。
       const { categories, selectedCategory } = get();

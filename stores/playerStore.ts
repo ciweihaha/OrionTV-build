@@ -593,6 +593,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       clearTimeout(seekTimeout);
     }
     seekTargetMillis = null;
+    // 代次 +1：在飞的 loadVideo/handleVideoError 回落看到代次变了就作废，
+    // 迟到的回落不会污染新打开的视频。同时清 handlingErrorUrl，否则窗口
+    // 期内重开同一视频再报错会被误判为“重复处理”而无回落。
+    loadVideoSeq++;
+    handlingErrorUrl = null;
     set({
       episodes: [],
       currentEpisodeIndex: 0,
@@ -638,6 +643,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     handlingErrorUrl = failedUrl;
 
+    // 代次校验：下面的 setDetail 内含收藏检查（API 路径是网络请求，窗口
+    // 可达数秒），期间用户可能已退出并打开另一个视频。await 后代次变了
+    // 说明已不是这个视频，迟到的回落必须作废（与 loadVideo 同一思路）。
+    const seq = loadVideoSeq;
+
     const detailStoreState = useDetailStore.getState();
     const { detail } = detailStoreState;
     const { currentEpisodeIndex } = get();
@@ -674,7 +684,15 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       // 更新DetailStore的当前detail为fallback source
       await useDetailStore.getState().setDetail(fallbackSource);
-      
+
+      // await 期间用户已退出/换视频：代次变了，迟到的回落作废，不写
+      // episodes、不弹 Toast，否则 B 正在播的剧集列表被换成 A 的
+      if (seq !== loadVideoSeq) {
+        logger.info(`[VIDEO_ERROR] Fallback superseded (new video loaded), ignoring`);
+        handlingErrorUrl = null;
+        return;
+      }
+
       // 重新加载当前集数的episodes
       const newEpisodes = fallbackSource.episodes || [];
       if (newEpisodes.length > currentEpisodeIndex) {
