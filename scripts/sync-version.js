@@ -14,6 +14,16 @@
 //
 // versionCode rule: major * 10000 + minor * 100 + patch (1.6.8 -> 10608).
 // Monotonic for semver; leaves room for 99 minor/patch bumps per major.
+//
+// Prerelease versions (1.7.0-beta.1) have NO distinct versionCode under this
+// rule: consecutive patches are adjacent integers (1.6.8 -> 10608, 1.6.9 ->
+// 10609), so there is no integer strictly between the previous stable and the
+// matching stable. versionCodeFor() therefore throws on prerelease input
+// instead of silently returning the stable's code (which used to make
+// 1.7.0-beta.1 and 1.7.0 both 10700 — Android treats them as the same build
+// and the stable release cannot upgrade over the beta). Build metadata
+// (+build.5) is still ignored: semver says it does not affect precedence,
+// so 1.6.9+build.5 is the same version as 1.6.9 and shares its code.
 const fs = require('fs');
 const path = require('path');
 
@@ -26,7 +36,7 @@ function readJson(file) {
 }
 
 function parseVersion(version) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version);
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/.exec(version);
   if (!match) {
     throw new Error(`Invalid semver version: ${JSON.stringify(version)}`);
   }
@@ -34,11 +44,20 @@ function parseVersion(version) {
     major: Number(match[1]),
     minor: Number(match[2]),
     patch: Number(match[3]),
+    prerelease: match[4] || null,
+    build: match[5] || null,
   };
 }
 
 function versionCodeFor(version) {
-  const { major, minor, patch } = parseVersion(version);
+  const { major, minor, patch, prerelease } = parseVersion(version);
+  if (prerelease) {
+    throw new Error(
+      `Prerelease version ${JSON.stringify(version)} has no distinct versionCode ` +
+        `under the major*10000+minor*100+patch rule (see header comment); ` +
+        `use a stable version`
+    );
+  }
   return major * 10000 + minor * 100 + patch;
 }
 

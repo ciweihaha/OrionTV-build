@@ -1,8 +1,8 @@
 name: Build Test 1.2
 
 # 测试版专用构建：只出包，不发版。
-# 1.2 测试版只改版本号（1.2.0），包名保持 com.oriontv 不变：
-# 用户已把电视上的正式版 1.6.8 卸载了，不需要单独包名共存；
+# 1.2 测试版只改版本号（1.2.0，固定测试版本，与正式版号无关），包名保持
+# com.oriontv 不变：用户已把电视上的正式版 1.7.0 卸载了，不需要单独包名共存；
 # versionCode 也保持和正式构建一致（不设置），避免以后装正式版时被拦。
 # 不要在这里加 Create Release / 打 tag / 上传 R2 的步骤。
 # 正式发版只走 build-apk.yml（master 分支）。
@@ -142,7 +142,7 @@ jobs:
           cat orionTV.1.2.0-test.apk.sha256
 
       - name: Upload test APK artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: oriontv-1.2.0-test
           path: artifacts/

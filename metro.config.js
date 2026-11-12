@@ -1,6 +1,5 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require("expo/metro-config");
-const path = require("path");
 
 // Find the project and workspace directories
 const projectRoot = __dirname;
@@ -24,16 +23,8 @@ const config = getDefaultConfig(projectRoot);
 //   config.resolver.sourceExts = tvSourceExts;
 // }
 
-// This can be replaced with `find-yarn-workspace-root`
-const monorepoRoot = path.resolve(projectRoot, "../..");
-
-// 1. Watch all files within the monorepo
-config.watchFolders = [monorepoRoot];
-// 2. Let Metro know where to resolve packages and in what order
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, "node_modules"),
-  path.resolve(monorepoRoot, "node_modules"),
-];
-config.resolver.disableHierarchicalLookup = true;
+// 注意：本仓库不是 monorepo，不要加 watchFolders / nodeModulesPaths 指向上
+// 级目录（旧配置曾把 watchFolders 设到 ../..，Metro 会监听整个上上级目录，
+// 还用 disableHierarchicalLookup 关掉分层查找，拖慢启动且容易解析错包）。
 
 module.exports = config;

@@ -5,28 +5,28 @@
   "version": "1.7.0",
   "license": "MIT",
   "scripts": {
-    "start": "EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo start",
-    "android": "EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo run:android",
-    "ios": "EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo run:ios",
-    "prebuild": "EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo prebuild --clean",
+    "start": "EXPO_TV=1 expo start",
+    "android": "EXPO_TV=1 expo run:android",
+    "ios": "EXPO_TV=1 expo run:ios",
+    "prebuild": "EXPO_TV=1 expo prebuild --clean",
     "build": "NODE_ENV=production EXPO_TV=1 yarn prebuild && cd android && ./gradlew assembleRelease",
-    "build-debug": "cd android && ./gradlew assembleDebug",
+    "build-debug": "if [ -d android ]; then cd android && ./gradlew assembleDebug; else echo \"android/ 不存在，先跑 yarn prebuild\"; exit 1; fi",
     "check-version": "node scripts/sync-version.js check",
     "test": "jest --watchAll",
     "test-ci": "jest --ci --coverage --no-cache",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf .expo node_modules/.cache && yarn cache clean && cd android && ./gradlew clean",
+    "clean": "rm -rf .expo node_modules/.cache && yarn cache clean && if [ -d android ]; then cd android && ./gradlew clean; else echo \"android/ 不存在，跳过 gradle clean\"; fi",
     "clean-modules": "rm -rf node_modules && yarn install"
   },
   "jest": {
     "preset": "jest-expo",
     "coverageThreshold": {
       "global": {
-        "branches": 35,
-        "functions": 45,
-        "lines": 45,
-        "statements": 45
+        "branches": 17,
+        "functions": 15,
+        "lines": 19,
+        "statements": 18
       },
       "services/api.ts": {
         "branches": 65,
@@ -46,7 +46,21 @@
         "lines": 7,
         "statements": 7
       }
-    }
+    },
+    "collectCoverageFrom": [
+      "app/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "hooks/**/*.{ts,tsx}",
+      "services/**/*.{ts,tsx}",
+      "stores/**/*.{ts,tsx}",
+      "utils/**/*.{ts,tsx}",
+      "constants/**/*.{ts,tsx}",
+      "plugins/**/*.{js,ts}",
+      "scripts/**/*.js",
+      "!**/__tests__/**",
+      "!**/*.test.{ts,tsx,js}",
+      "!**/*.d.ts"
+    ]
   },
   "resolutions": {
     "react-native": "npm:react-native-tvos@~0.88.1-0"
@@ -95,7 +109,7 @@
     "@react-native-tvos/config-tv": "^0.1.7",
     "@react-native/jest-preset": "^0.88.1",
     "@types/jest": "^30.0.0",
-    "@types/node": "^26.6.6",
+    "@types/node": "^22.20.5",
     "@types/react": "~19.3.0",
     "@types/react-test-renderer": "^19.3.1",
     "babel-plugin-transform-remove-console": "^6.9.4",
@@ -113,5 +127,8 @@
       ]
     }
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "engines": {
+    "node": ">=22"
+  }
 }

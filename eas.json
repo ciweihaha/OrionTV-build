@@ -39,7 +39,15 @@
         "EXPO_TV": "1"
       }
     },
-    "production": {},
+    "production": {
+      "env": {
+        "EXPO_TV": "1"
+      },
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "local"
+      }
+    },
     "production_tv": {
       "extends": "production", 
       "env": {
