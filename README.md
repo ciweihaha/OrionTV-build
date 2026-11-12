@@ -104,3 +104,10 @@ OrionTV 仅作为视频搜索工具，不存储、上传或分发任何视频内
 感谢以下项目提供 API Key 的赞助
 
 - [gpt-load](https://github.com/tbphp/gpt-load) - 一个高性能的 OpenAI 格式 API 多密钥轮询代理服务器，支持负载均衡，使用 Go 语言开发
+
+## 📦 当前版本
+
+- 当前版本：1.6.8
+- 安装链接（带版本号参数，避开直链 4 小时缓存）：`https://dl.ciweihaha.win/orionTV.1.6.8.apk?v=1.6.8`
+- 电视端“检查更新”走 GitHub，不受直链缓存影响。
+- 版本历史见 [CHANGELOG.md](./CHANGELOG.md)。
