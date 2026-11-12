@@ -132,7 +132,10 @@ class RemoteControlService {
   private static readonly PAIRING_LOCKOUT_MS = 60_000;
   // 跟踪的 IP 条目上限：超过时清理已过期锁定的条目，防扫描导致 Map 无限增长
   private static readonly MAX_TRACKED_IPS = 100;
-  private pairingAttemptsByIp = new Map<string, { failures: number; lockoutUntil: number }>();
+  // 失败计数有效期：失败 1-4 次（未达锁定阈值）的条目若永不清理，扫描
+  // 每个 IP 试一次就能让 Map 无限增长；1 小时无新失败即过期清掉。
+  private static readonly FAILURE_WINDOW_MS = 60 * 60 * 1000;
+  private pairingAttemptsByIp = new Map<string, { failures: number; lockoutUntil: number; lastFailureAt: number }>();
 
   constructor() {
     this.httpServer = new TCPHttpServer();
@@ -176,6 +179,11 @@ class RemoteControlService {
       if (state.failures === 0) {
         this.pairingAttemptsByIp.delete(clientIp);
         state = undefined;
+      } else if (now - state.lastFailureAt > RemoteControlService.FAILURE_WINDOW_MS) {
+        // 失败计数过期：1 小时无新失败，旧失败清零（防扫描每个 IP 试
+        // 1-4 次就让 Map 永久增长——这类条目旧逻辑永远删不掉）
+        this.pairingAttemptsByIp.delete(clientIp);
+        state = undefined;
       }
     }
     const headers = request.headers || {};
@@ -191,15 +199,20 @@ class RemoteControlService {
         this.pairingAttemptsByIp.set(clientIp, {
           failures: 0,
           lockoutUntil: now + RemoteControlService.PAIRING_LOCKOUT_MS,
+          lastFailureAt: now,
         });
         logger.info(`[RemoteControl] Pairing locked out for ${clientIp} for 60s after repeated failures`);
       } else {
-        this.pairingAttemptsByIp.set(clientIp, { failures, lockoutUntil: 0 });
+        this.pairingAttemptsByIp.set(clientIp, { failures, lockoutUntil: 0, lastFailureAt: now });
       }
-      // 偶发清理：IP 条目过多时清掉已过期锁定的，避免扫描导致 Map 无限增长
+      // 偶发清理：IP 条目过多时清掉已过期锁定与已过期失败计数的，避免扫描
+      // 导致 Map 无限增长
       if (this.pairingAttemptsByIp.size > RemoteControlService.MAX_TRACKED_IPS) {
         for (const [ip, s] of this.pairingAttemptsByIp) {
-          if (s.failures === 0 && now >= s.lockoutUntil) {
+          if (
+            (s.failures === 0 && now >= s.lockoutUntil) ||
+            now - s.lastFailureAt > RemoteControlService.FAILURE_WINDOW_MS
+          ) {
             this.pairingAttemptsByIp.delete(ip);
           }
         }
@@ -234,17 +247,24 @@ class RemoteControlService {
             const message = parsedBody.message;
             // 消息长度上限：远程键盘输入文本，10KB 已远超正常使用（R13）
             const MAX_MESSAGE_LENGTH = 10 * 1024;
-            if (typeof message === "string" && message.length > 0) {
-              if (message.length > MAX_MESSAGE_LENGTH) {
-                logger.info(`[RemoteControl] Message too long (${message.length} chars), rejected`);
-                return {
-                  statusCode: 413,
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ error: "Message too long" }),
-                };
-              }
-              this.onMessage(message);
+            if (typeof message !== "string" || message.length === 0) {
+              // 空体/缺 message 字段：此前返回 200 {status:"ok"}，调用方以为
+              // 消息已送达，实际什么都没发生；缺字段是客户端错误，报 400。
+              return {
+                statusCode: 400,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ error: "Missing message" }),
+              };
             }
+            if (message.length > MAX_MESSAGE_LENGTH) {
+              logger.info(`[RemoteControl] Message too long (${message.length} chars), rejected`);
+              return {
+                statusCode: 413,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ error: "Message too long" }),
+              };
+            }
+            this.onMessage(message);
             return {
               statusCode: 200,
               headers: { "Content-Type": "application/json" },
@@ -299,11 +319,12 @@ class RemoteControlService {
     logger.debug("[RemoteControl] Attempting to start server...");
 
     try {
-      // 每次启动生成新的配对码
+      const url = await this.httpServer.start();
+      // 启动成功后再轮换配对码：启动失败时旧码保留（TV 界面可能还显示着它，
+      // 重试启动仍用同一码；先轮换再启动，失败一次就废掉一个有效码）。
       this.pairingCode = this.generatePairingCode();
       this.pairingAttemptsByIp.clear();
       logger.debug(`[RemoteControl] Pairing code generated`);
-      const url = await this.httpServer.start();
       logger.debug(`[RemoteControl] Server started successfully at: ${url}`);
       return url;
     } catch (error) {

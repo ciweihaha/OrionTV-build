@@ -34,6 +34,10 @@ class TCPHttpServer {
   private server: TcpSocket.Server | null = null;
   private isRunning = false;
   private requestHandler: RequestHandler | null = null;
+  // 启动中的 Promise：start() 是异步的，isRunning 只在 listen 回调里才置 true，
+  // 两次并发 start() 都会通过 isRunning 检查并各建一个 server（后一个 EADDRINUSE，
+  // 且 this.server 会被覆盖导致第一个泄漏）。调用方虽有 guard，这里也防一道。
+  private startingPromise: Promise<string> | null = null;
   // 当前活跃连接（L2：并发上限计数，连接关闭时移除）
   private activeSockets = new Set<TcpSocket.Socket>();
 
@@ -149,7 +153,12 @@ class TCPHttpServer {
       return `http://${ipAddress}:${PORT}`;
     }
 
-    return new Promise((resolve, reject) => {
+    // 启动中：返回同一个 Promise，不重复建 server
+    if (this.startingPromise) {
+      return this.startingPromise;
+    }
+
+    this.startingPromise = new Promise((resolve, reject) => {
       try {
         this.server = TcpSocket.createServer((socket: TcpSocket.Socket) => {
           // 并发上限（L2）：超限直接拒绝，不进处理流程、不占计数
@@ -185,6 +194,10 @@ class TCPHttpServer {
           // 请求体上限按 UTF-8 字节算：requestData.length 是 UTF-16 码元数，
           // 中文正文会少算约 3 倍（与 m3u8.ts 的 R16、storage.ts 的 R42 同类问题）
           let requestByteLength = 0;
+          // 流式解码器：多字节 UTF-8 字符（中文、emoji）可能被拆到两个 TCP 包，
+          // 逐包 toString() 会把拆开的半个字符解成 U+FFFD 乱码；TextDecoder
+          // 的 stream 模式会把不完整序列留到下一包再解。
+          const decoder = new TextDecoder();
 
           // 请求体上限 1MB，防恶意客户端无限发送耗尽内存
           const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -193,7 +206,9 @@ class TCPHttpServer {
             // （包括 TextEncoder 缺失、socket 异常）在 Hermes 里都会直接闪退。
             // 此前 TextEncoder 的三处调用都在内层 try 之外，GET / 配对页一打开就崩。
             try {
-              const chunk = data.toString();
+              const chunk = typeof data === 'string'
+                ? data
+                : decoder.decode(data, { stream: true });
               requestData += chunk;
               requestByteLength += utf8ByteLength(chunk);
               armIdleTimer();
@@ -236,6 +251,10 @@ class TCPHttpServer {
                 }
 
                 try {
+                  // 请求已收全：把解码器里残留的不完整序列刷出来（正常情况
+                  // 下没有残留——body 字节数已对齐；有残留说明尾部截断，
+                  // 按替换字符处理，不静默丢字节）
+                  requestData += decoder.decode();
                   const request = this.parseHttpRequest(requestData, remoteAddress);
                   if (request && this.requestHandler) {
                     const response = await this.requestHandler(request);
@@ -287,20 +306,24 @@ class TCPHttpServer {
         this.server.listen({ port: PORT, host: '0.0.0.0' }, () => {
           logger.debug(`[TCPHttpServer] Server listening on ${ipAddress}:${PORT}`);
           this.isRunning = true;
+          this.startingPromise = null;
           resolve(`http://${ipAddress}:${PORT}`);
         });
 
         this.server.on('error', (error: Error) => {
           logger.error('[TCPHttpServer] Server error:', error);
           this.isRunning = false;
+          this.startingPromise = null;
           reject(error);
         });
 
       } catch (error) {
         logger.error('[TCPHttpServer] Failed to start server:', error);
+        this.startingPromise = null;
         reject(error);
       }
     });
+    return this.startingPromise;
   }
 
   public stop() {

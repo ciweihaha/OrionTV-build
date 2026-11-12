@@ -1,6 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LoginCredentialsManager } from "../storage";
+import { LoginCredentialsManager, parseRecordKey } from "../storage";
 
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn(),
@@ -78,5 +78,23 @@ describe("LoginCredentialsManager（SecureStore 凭据层）", () => {
     await expect(
       LoginCredentialsManager.save({ username: "u", password: "p" }),
     ).rejects.toThrow("SecureStore unavailable");
+  });
+});
+
+describe("parseRecordKey（记录键编解码，第 5 轮）", () => {
+  it("含 + 的 source/id 不碰撞：解析回原值", () => {
+    expect(parseRecordKey("a%2Bb+c")).toEqual({ source: "a+b", id: "c" });
+    expect(parseRecordKey("a+b%2Bc")).toEqual({ source: "a", id: "b+c" });
+    // 两个键不同（旧实现都拼成 a+b+c，后者覆盖前者）
+    expect("a%2Bb+c").not.toBe("a+b%2Bc");
+  });
+
+  it("不含特殊字符的键与旧格式逐字节相同（存量数据不受影响）", () => {
+    expect(parseRecordKey("agg+12345")).toEqual({ source: "agg", id: "12345" });
+    expect(parseRecordKey("douban+movie-1")).toEqual({ source: "douban", id: "movie-1" });
+  });
+
+  it("无分隔符的旧键返回整个 source、空 id", () => {
+    expect(parseRecordKey("legacy-key")).toEqual({ source: "legacy-key", id: "" });
   });
 });

@@ -174,3 +174,67 @@ describe('programmeProgress', () => {
     expect(programmeProgress({ title: 't', startAt: 2000, endAt: 1000 }, 1500)).toBe(0);
   });
 });
+
+describe('parseEpgTime 负时区带分钟（第 5 轮）', () => {
+  it('-0530 是 -5.5 小时，不是 -4.5 小时', () => {
+    // 2026-11-12 08:00:00 -0530 = 2026-11-12T13:30:00Z
+    expect(parseEpgTime('20261112080000 -0530')).toBe(Date.UTC(2026, 10, 12, 13, 30, 0));
+  });
+
+  it('+0530 是 +5.5 小时（正时区不受影响）', () => {
+    // 2026-11-12 08:00:00 +0530 = 2026-11-12T02:30:00Z
+    expect(parseEpgTime('20261112080000 +0530')).toBe(Date.UTC(2026, 10, 12, 2, 30, 0));
+  });
+});
+
+describe('parseEpgXml CDATA 与 icon-first 频道（第 5 轮）', () => {
+  it('CDATA 标题不被丢弃', () => {
+    const xml = `<?xml version="1.0"?><tv>
+<channel id="cctv1"><display-name>CCTV-1</display-name></channel>
+<programme channel="cctv1" start="20261112080000 +0800" stop="20261112090000 +0800">
+  <title><![CDATA[新闻联播]]></title>
+</programme>
+</tv>`;
+    const data = parseEpgXml(xml);
+    expect(data.channels.cctv1.programmes).toHaveLength(1);
+    expect(data.channels.cctv1.programmes[0].title).toBe('新闻联播');
+  });
+
+  it('CDATA 里的实体不解码（字面量）', () => {
+    const xml = `<?xml version="1.0"?><tv>
+<channel id="cctv1"><display-name>CCTV-1</display-name></channel>
+<programme channel="cctv1" start="20261112080000 +0800" stop="20261112090000 +0800">
+  <title><![CDATA[A &amp; B]]></title>
+</programme>
+</tv>`;
+    const data = parseEpgXml(xml);
+    expect(data.channels.cctv1.programmes[0].title).toBe('A &amp; B');
+  });
+
+  it('<icon> 在前的频道不丢名字', () => {
+    const xml = `<?xml version="1.0"?><tv>
+<channel id="cctv1"><icon src="https://example.test/cctv1.png"/><display-name>CCTV-1 综合</display-name></channel>
+</tv>`;
+    const data = parseEpgXml(xml);
+    expect(data.channels.cctv1.name).toBe('CCTV-1 综合');
+  });
+
+  it('display-name 在 CDATA 里也能解析', () => {
+    const xml = `<?xml version="1.0"?><tv>
+<channel id="cctv1"><display-name><![CDATA[CCTV-1 综合]]></display-name></channel>
+</tv>`;
+    const data = parseEpgXml(xml);
+    expect(data.channels.cctv1.name).toBe('CCTV-1 综合');
+  });
+
+  it('数字字符引用超出 BMP 时用 fromCodePoint（emoji 不乱码）', () => {
+    const xml = `<?xml version="1.0"?><tv>
+<channel id="cctv1"><display-name>CCTV-1</display-name></channel>
+<programme channel="cctv1" start="20261112080000 +0800" stop="20261112090000 +0800">
+  <title>节目 &#128512;</title>
+</programme>
+</tv>`;
+    const data = parseEpgXml(xml);
+    expect(data.channels.cctv1.programmes[0].title).toBe('节目 \u{1F600}');
+  });
+});

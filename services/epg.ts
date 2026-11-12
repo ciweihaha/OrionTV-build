@@ -62,8 +62,10 @@ export function parseEpgTime(time: string): number {
   const minute = Number(mi);
   const second = Number(s);
   if (tzH !== undefined) {
-    // 带时区：按 UTC 算再减时区偏移
-    const offsetMs = (Number(tzH) * 60 + Number(tzM ?? '0')) * 60 * 1000;
+    // 带时区：按 UTC 算再减时区偏移。注意分钟也要带符号：-0530 是 -5.5 小时，
+    // 不能按 (-5*60 + 30) 算成 -4.5 小时（分与时同号）。
+    const sign = tzH.startsWith('-') ? -1 : 1;
+    const offsetMs = sign * (Math.abs(Number(tzH)) * 60 + Number(tzM ?? '0')) * 60 * 1000;
     return Date.UTC(year, month, day, hour, minute, second) - offsetMs;
   }
   // 无时区：XMLTV 没写时区时就是本地时间
@@ -77,20 +79,39 @@ function isUsableProgramme(p: EpgProgramme): boolean {
 
 /** 解 XML 实体：标题里可能出现 &amp; &lt; 等 */
 function decodeXmlEntities(text: string): string {
+  // 数字字符引用用 fromCodePoint：fromCharCode 只能处理 BMP（≤0xFFFF），
+  // 超出部分（如 emoji &#128512;）会变成孤立代理项乱码。
+  const fromCodePointSafe = (code: number): string =>
+    Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+      ? String.fromCodePoint(code)
+      : '';
   return text
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_m, code) => fromCodePointSafe(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, code) => fromCodePointSafe(parseInt(code, 16)))
     .replace(/&amp;/g, '&');
 }
 
-const CHANNEL_RE = /<channel\s+id="([^"]*)">\s*<display-name[^>]*>([^<]*)<\/display-name>/g;
+// 频道块：先取整个 <channel>…</channel>，再在块内找 display-name——
+// 旧正则要求 display-name 紧跟 <channel>，<icon> 在前的频道会丢名字。
+// display-name 与 title 都可能包在 CDATA 里（<![CDATA[…]]>），旧正则的
+// [^<]* 匹配不上，含 CDATA 标题的节目会被整条丢弃；CDATA 内容是字面量，
+// 不做实体解码。
+const CHANNEL_BLOCK_RE = /<channel\s+id="([^"]*)">([\s\S]*?)<\/channel>/g;
+const DISPLAY_NAME_RE = /<display-name[^>]*>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]*))<\/display-name>/;
 const PROGRAMME_BLOCK_RE = /<programme\b([^>]*)>([\s\S]*?)<\/programme>/g;
 const ATTR_RE = /(\w+)="([^"]*)"/g;
-const TITLE_RE = /<title[^>]*>([^<]*)<\/title>/;
+const TITLE_RE = /<title[^>]*>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]*))<\/title>/;
+
+/** 从 CDATA 感知正则的匹配结果取文本：CDATA 组命中时直接用（不解实体），否则解实体 */
+function textFromMatch(m: RegExpExecArray | null): string {
+  if (!m) return '';
+  if (m[1] !== undefined) return m[1].trim();
+  return decodeXmlEntities((m[2] ?? '').trim());
+}
 
 /**
  * 解析 XMLTV 文本。容错：单条节目解析失败只跳过这一条，不拖垮整个节目单；
@@ -99,13 +120,14 @@ const TITLE_RE = /<title[^>]*>([^<]*)<\/title>/;
 export function parseEpgXml(xml: string): EpgData {
   const channels: Record<string, EpgChannel> = {};
 
-  CHANNEL_RE.lastIndex = 0;
+  CHANNEL_BLOCK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = CHANNEL_RE.exec(xml)) !== null) {
+  while ((m = CHANNEL_BLOCK_RE.exec(xml)) !== null) {
     const id = m[1].trim();
     if (!id) continue;
     if (!channels[id]) {
-      channels[id] = { id, name: decodeXmlEntities(m[2].trim()), programmes: [] };
+      const name = textFromMatch(DISPLAY_NAME_RE.exec(m[2]));
+      channels[id] = { id, name: name || id, programmes: [] };
     }
   }
 
@@ -118,8 +140,7 @@ export function parseEpgXml(xml: string): EpgData {
       attrs[a[1]] = a[2];
     }
     const channelId = (attrs.channel ?? '').trim();
-    const titleMatch = TITLE_RE.exec(m[2]);
-    const title = titleMatch ? decodeXmlEntities(titleMatch[1].trim()) : '';
+    const title = textFromMatch(TITLE_RE.exec(m[2]));
     const programme: EpgProgramme = {
       title,
       startAt: parseEpgTime(attrs.start ?? ''),

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { api, SearchResult, PlayRecord } from "@/services/api";
 import type { AggVideoItem } from "@/services/api";
 import { buildAggFilterParams } from "@/utils/categoryFilters";
-import { PlayRecordManager } from "@/services/storage";
+import { PlayRecordManager, parseRecordKey } from "@/services/storage";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
 import { Logger } from "@/utils/Logger";
@@ -277,11 +277,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
         if (isStale()) return;
         const rowItems = Object.entries(records)
           .map(([key, record]) => {
-            // key 是 `${source}+${id}`：按最后一个 + 切，id 里万一带 + 也不至于截断
-            //（与 app/favorites.tsx 同一处修法）
-            const sep = key.lastIndexOf("+");
-            const source = sep >= 0 ? key.slice(0, sep) : key;
-            const id = sep >= 0 ? key.slice(sep + 1) : "";
+            // key 是 generateKey 拼的 `${source}+${id}`（source/id 里的 '+' 已转义），
+            // 用 parseRecordKey 解析（与 app/favorites.tsx 同一处修法）
+            const { source, id } = parseRecordKey(key);
             return {
               ...record,
               id,
