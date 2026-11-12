@@ -211,7 +211,14 @@ export default function HomeScreen() {
   };
 
   // 检查是否需要显示API配置提示
-  const shouldShowApiConfig = apiConfigStatus.needsConfiguration && selectedCategory && !selectedCategory.tags;
+  // CMS 分类不走这条：agg 地址硬编码直连，不依赖用户服务器；未配服务器时
+  // CMS 内容照样能加载，配置提示不能盖住它（否则动漫/综艺这类无 tags 的
+  // CMS 分类在新装应用上永远显示“请配置服务器地址”，用户以为连不上网）。
+  const shouldShowApiConfig =
+    apiConfigStatus.needsConfiguration &&
+    selectedCategory &&
+    !selectedCategory.tags &&
+    !selectedCategory.cmsType;
 
   // TV端和平板端的顶部导航
   const renderHeader = () => {
@@ -433,14 +440,14 @@ export default function HomeScreen() {
             {getApiConfigErrorMessage(apiConfigStatus)}
           </ThemedText>
         </View>
-      ) : apiConfigStatus.isValidating ? (
+      ) : apiConfigStatus.isValidating && !isCmsCategory ? (
         <View style={commonStyles.center}>
           <ActivityIndicator size="large" />
           <ThemedText type="subtitle" style={{ padding: spacing, textAlign: "center" }}>
             正在验证服务器配置...
           </ThemedText>
         </View>
-      ) : apiConfigStatus.error && !apiConfigStatus.isValid ? (
+      ) : apiConfigStatus.error && !apiConfigStatus.isValid && !isCmsCategory ? (
         <View style={commonStyles.center}>
           <ThemedText type="subtitle" style={{ padding: spacing, textAlign: "center" }}>
             {apiConfigStatus.error}
