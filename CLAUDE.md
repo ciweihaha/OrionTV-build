@@ -25,7 +25,6 @@ OrionTV is a React Native TVOS application for streaming video content, built wi
 - `yarn typecheck` - Run TypeScript type checking
 
 #### Build and Deployment
-- `yarn copy-config` - Copy TV-specific Android configurations
 - `yarn build-debug` - Build Android APK for debugging
 - `yarn clean` - Clean cache and build artifacts
 - `yarn clean-modules` - Reinstall all node modules
@@ -97,7 +96,7 @@ This project uses a TV-first approach with responsive adaptations:
 ### Important Development Notes
 
 - Run `yarn prebuild` after adding new dependencies for native builds
-- Use `yarn copy-config` to apply TV-specific Android configurations
+- AndroidManifest 的自定义项（明文策略等）由 `plugins/withOrionManifest.js` 在 prebuild 时增量注入，不要再全量覆盖生成的 manifest
 - TV components require focus management and remote control support
 - Test on both TV devices (Apple TV/Android TV) and responsive mobile/tablet layouts
 - All API calls are centralized in `/services` directory with error handling

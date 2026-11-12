@@ -6,7 +6,7 @@
 
 - 用户填写 IP 地址或带端口的 host 作为服务器地址时，应用默认补 `http://`（见 `stores/settingsStore.ts` 的 `saveSettings`）；登录的用户名/密码以明文 JSON 发送，同一局域网内的攻击者可嗅探。
 - 缓解：登录时若目标地址是非 localhost 的 `http://`，会弹出一次明确的风险提示，需用户确认后才继续登录（同一会话内只提示一次，见 `components/LoginModal.tsx`）。localhost（`localhost` / `127.0.0.1` / `[::1]`）不提示。
-- 明文策略的实际来源是自定义 `xml/AndroidManifest.xml` 中的 `usesCleartextTraffic="true"`（`app.json` 里的 `networkSecurityConfig` 字段不是 Expo 支持的配置项，已被忽略，不要以它为准）。
+- 明文策略的实际来源是 `plugins/withOrionManifest.js`（config plugin，在 prebuild 生成的 manifest 上增量设置 `usesCleartextTraffic="true"`）。`app.json` 里的 `usesCleartextTraffic` 字段不被当前 @expo/config-plugins 处理（实测生成 manifest 里没有），只作意图声明；不要以它为准。旧的 `xml/AndroidManifest.xml` 全量覆盖机制已废弃（会丢掉 expo-video 等插件的注入）。
 
 **建议：局域网内部署 HTTPS/反代。** 局域网自托管场景下推荐的几种做法（按易用程度排序）：
 
