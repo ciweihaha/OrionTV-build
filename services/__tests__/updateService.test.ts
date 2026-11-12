@@ -258,3 +258,26 @@ describe("UpdateService.verifyApkSha256 与 assertApkSizeAcceptable（第 4 轮�
     ).rejects.toThrow("APK_TOO_LARGE");
   });
 });
+
+describe("UpdateService.compareVersions 预发布后缀（第 5 轮）", () => {
+  it("正式版高于同号预发布版：1.7.0 > 1.7.0-beta", () => {
+    expect(updateService.compareVersions("1.7.0", "1.7.0-beta")).toBe(1);
+    expect(updateService.compareVersions("1.7.0-beta", "1.7.0")).toBe(-1);
+  });
+
+  it("beta 用户能收到正式版更新提示", () => {
+    // isUpdateAvailable 用 compareVersions > 0 判断；旧实现判相等，beta 用户收不到提示
+    expect(updateService.compareVersions("1.7.0", "1.7.0-beta")).toBeGreaterThan(0);
+  });
+
+  it("两边都有后缀时按后缀字典序", () => {
+    expect(updateService.compareVersions("1.7.0-beta.2", "1.7.0-beta.1")).toBe(1);
+    expect(updateService.compareVersions("1.7.0-alpha", "1.7.0-beta")).toBe(-1);
+  });
+
+  it("无后缀比较不受影响（回归）", () => {
+    expect(updateService.compareVersions("1.7.0", "1.6.8")).toBe(1);
+    expect(updateService.compareVersions("1.7.0", "1.7.0")).toBe(0);
+    expect(updateService.compareVersions("1.6.8", "1.7.0")).toBe(-1);
+  });
+});

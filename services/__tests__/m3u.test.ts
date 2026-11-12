@@ -85,3 +85,32 @@ describe('normalizeChannel', () => {
     expect(ch.tvgId).toBe('a');
   });
 });
+
+describe('parseM3U 无名频道不合并（第 5 轮）', () => {
+  it('两个无名频道各留一条，不并成一个 Unknown', () => {
+    const unnamed = `#EXTM3U
+#EXTINF:-1,
+https://example.test/a.m3u8
+#EXTINF:-1,
+https://example.test/b.m3u8
+`;
+    const channels = parseM3U(unnamed);
+    expect(channels).toHaveLength(2);
+    expect(channels[0].name).toBe('Unknown');
+    expect(channels[1].name).toBe('Unknown');
+    expect(channels[0].urls).toEqual(['https://example.test/a.m3u8']);
+    expect(channels[1].urls).toEqual(['https://example.test/b.m3u8']);
+  });
+
+  it('有名称的同名频道仍合并（回归）', () => {
+    const named = `#EXTM3U
+#EXTINF:-1,台A
+https://example.test/a.m3u8
+#EXTINF:-1,台A
+https://example.test/a2.m3u8
+`;
+    const channels = parseM3U(named);
+    expect(channels).toHaveLength(1);
+    expect(channels[0].urls).toEqual(['https://example.test/a.m3u8', 'https://example.test/a2.m3u8']);
+  });
+});

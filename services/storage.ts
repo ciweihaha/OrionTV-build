@@ -64,7 +64,23 @@ export interface LoginCredentials {
 }
 
 // --- Helper ---
-const generateKey = (source: string, id: string) => `${source}+${id}`;
+// 记录键：`${source}+${id}`。source/id 里若含 '+'，直接拼接会碰撞——
+// (source="a+b", id="c") 与 (source="a", id="b+c") 拼出同一个键，后者
+// 会覆盖前者的记录。转义只针对分隔符 '+' 与转义符 '%' 本身，不含这两
+// 者的键与旧格式逐字节相同（存量数据不受影响）。
+const escapeKeyPart = (s: string) => s.replace(/%/g, "%25").replace(/\+/g, "%2B");
+const unescapeKeyPart = (s: string) => s.replace(/%2B/g, "+").replace(/%25/g, "%");
+const generateKey = (source: string, id: string) => `${escapeKeyPart(source)}+${escapeKeyPart(id)}`;
+
+/** 解析记录键：按最后一个 '+' 切分后反转义（与 generateKey 配对） */
+export function parseRecordKey(key: string): { source: string; id: string } {
+  const sep = key.lastIndexOf("+");
+  if (sep < 0) return { source: unescapeKeyPart(key), id: "" };
+  return {
+    source: unescapeKeyPart(key.slice(0, sep)),
+    id: unescapeKeyPart(key.slice(sep + 1)),
+  };
+}
 
 // 本地写序列化：AsyncStorage 读-改-写不是原子的，并发写会互相覆盖
 // （播放记录节流保存与切集/标记片头同时写时，旧快照会盖掉新位置；

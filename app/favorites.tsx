@@ -4,7 +4,7 @@ import { useFocusEffect } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import useFavoritesStore from "@/stores/favoritesStore";
-import { Favorite } from "@/services/storage";
+import { Favorite, parseRecordKey } from "@/services/storage";
 import VideoCard from "@/components/VideoCard";
 import { api } from "@/services/api";
 import CustomScrollView from "@/components/CustomScrollView";
@@ -30,10 +30,9 @@ export default function FavoritesScreen() {
   );
 
   const renderItem = ({ item, ref }: { item: Favorite & { key: string }; index: number; ref?: React.Ref<any> }) => {
-    // key 是 `${source}+${id}`：按最后一个 + 切，id 里万一带 + 也不至于截断
-    const sep = item.key.lastIndexOf("+");
-    const source = sep >= 0 ? item.key.slice(0, sep) : item.key;
-    const id = sep >= 0 ? item.key.slice(sep + 1) : "";
+    // key 是 generateKey 拼的 `${source}+${id}`（source/id 里的 '+' 已转义），
+    // 用 parseRecordKey 解析（与 stores/homeStore.ts 同一处修法）
+    const { source, id } = parseRecordKey(item.key);
     return (
       <VideoCard
         ref={ref}

@@ -472,6 +472,16 @@ class UpdateService {
         leftover = tail.length > 0 ? tail.slice() : new Uint8Array(0);
       }
     } finally {
+      // 读中途抛错时取消 reader：只 releaseLock 不 cancel，底层流不会被
+      // 释放（expo-file-system 的流实现可能因此泄漏文件句柄）。正常读完
+      // 时 cancel 是空操作。cancel 自身失败也不影响主流程。
+      try {
+        if (typeof (reader as unknown as { cancel?: unknown }).cancel === 'function') {
+          await (reader as unknown as { cancel: () => Promise<void> }).cancel();
+        }
+      } catch {
+        // 忽略：流已关闭等
+      }
       reader.releaseLock();
     }
 
@@ -574,20 +584,31 @@ class UpdateService {
    *  5️⃣ 版本比对工具（支持 -beta / -rc 等后缀）
    * --------------------------------------------------------------- */
   compareVersions(v1: string, v2: string): number {
-    // 剥离后缀（如 1.3.14-beta → 1.3.14），只比较数字部分
-    const normalize = (v: string) => v.split('-')[0].split('.').map(s => {
-      const n = parseInt(s, 10);
-      return isNaN(n) ? 0 : n;
-    });
-    const p1 = normalize(v1);
-    const p2 = normalize(v2);
-    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
-      const n1 = p1[i] ?? 0;
-      const n2 = p2[i] ?? 0;
+    // 数字部分相等时，带预发布后缀（-beta/-alpha/-rc）的版本低于正式版：
+    // 旧实现直接剥掉后缀，1.7.0-beta 与 1.7.0 被判相等，beta 用户永远收不到
+    // 正式版更新提示。两边都有后缀时按后缀字典序比较（beta.1 < beta.2）。
+    const parse = (v: string) => {
+      const [num, pre] = v.split('-', 2);
+      return {
+        parts: num.split('.').map(s => {
+          const n = parseInt(s, 10);
+          return isNaN(n) ? 0 : n;
+        }),
+        pre: pre ?? '',
+      };
+    };
+    const a = parse(v1);
+    const b = parse(v2);
+    for (let i = 0; i < Math.max(a.parts.length, b.parts.length); i++) {
+      const n1 = a.parts[i] ?? 0;
+      const n2 = b.parts[i] ?? 0;
       if (n1 > n2) return 1;
       if (n1 < n2) return -1;
     }
-    return 0;
+    if (a.pre === b.pre) return 0;
+    if (a.pre === '') return 1; // 正式版高于预发布版
+    if (b.pre === '') return -1;
+    return a.pre < b.pre ? -1 : 1;
   }
   getCurrentVersion(): string {
     return currentVersion;

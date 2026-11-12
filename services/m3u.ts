@@ -98,6 +98,12 @@ function mergeSameNameChannels(channels: Channel[]): Channel[] {
   const merged: Channel[] = [];
   const byName = new Map<string, Channel>();
   for (const ch of channels) {
+    // 无名频道（name 为 'Unknown' 兜底值）不参与合并：所有无名频道
+    // 都叫 'Unknown'，按名合并会把它们并成一条，台就丢了。
+    if (ch.name === 'Unknown') {
+      merged.push(ch);
+      continue;
+    }
     const existing = byName.get(ch.name);
     if (!existing) {
       byName.set(ch.name, ch);
