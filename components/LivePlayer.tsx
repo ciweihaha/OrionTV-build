@@ -20,7 +20,7 @@ const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onPlaybackError, onRetry }: LivePlayerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // V1.5：每个 streamUrl 只上报一次错误，避免上层重复跳台
   const errorReportedForRef = useRef<string | null>(null);
   useKeepAwake();

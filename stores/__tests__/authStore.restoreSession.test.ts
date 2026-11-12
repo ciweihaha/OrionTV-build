@@ -122,7 +122,7 @@ describe("authStore.restoreSession（401 自动恢复的登录端）", () => {
     // 等登录 mock 真被调用（release 已赋值）再放行，否则 release 还是 undefined
     //（此前 CI 失败就是在这里直接调 release 抛 TypeError）。
     for (let i = 0; i < 50 && apiLoginMock.mock.calls.length === 0; i++) {
-      await new Promise((r) => setImmediate(r));
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
     }
     expect(apiLoginMock).toHaveBeenCalledTimes(1);
     release();

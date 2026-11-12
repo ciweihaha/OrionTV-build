@@ -23,8 +23,8 @@ export const useTVRemoteHandler = () => {
   const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
   const seek = usePlayerStore((s) => s.seek);
 
-  const controlsTimer = useRef<NodeJS.Timeout | null>(null);
-  const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fastForwardIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 重置或启动隐藏控件的定时器
   const resetTimer = useCallback(() => {

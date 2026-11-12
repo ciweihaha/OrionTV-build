@@ -240,7 +240,7 @@ export default function PlayScreen() {
   }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, router]);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     if (isLoading) {
       timeoutId = setTimeout(() => {

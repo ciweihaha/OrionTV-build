@@ -69,6 +69,7 @@
     "@react-native-tvos/config-tv": "^0.1.7",
     "@react-native/jest-preset": "^0.88.1",
     "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.6",
     "@types/react": "~19.3.0",
     "@types/react-test-renderer": "^19.3.1",
     "babel-plugin-transform-remove-console": "^6.9.4",

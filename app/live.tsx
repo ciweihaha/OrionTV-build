@@ -56,8 +56,8 @@ export default function LiveScreen() {
   const [isChannelListVisible, setIsChannelListVisible] = useState(false);
   const [channelTitle, setChannelTitle] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState(""); // 频道搜索过滤（V1.5）
-  const titleTimer = useRef<NodeJS.Timeout | null>(null);
-  const digitTimer = useRef<NodeJS.Timeout | null>(null);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const digitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const digitBufRef = useRef("");                          // TV 事件闭包内读最新缓冲
   const failCountRef = useRef(0);                          // 连续失败计数（坏源跳台）
   const lastChannelRestoredRef = useRef(false);            // 上次频道只恢复一次
