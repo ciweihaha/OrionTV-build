@@ -10,7 +10,11 @@ export interface ApiConfigStatus {
 }
 
 export const useApiConfig = () => {
-  const { apiBaseUrl, serverConfig, isLoadingServerConfig } = useSettingsStore();
+  // 按字段订阅：原来整库订阅，改任何一个设置（如 m3u 地址、片头跳过）
+  // 都会让用这个 hook 的首页重渲染；现在只跟这三个字段有关
+  const apiBaseUrl = useSettingsStore((s) => s.apiBaseUrl);
+  const serverConfig = useSettingsStore((s) => s.serverConfig);
+  const isLoadingServerConfig = useSettingsStore((s) => s.isLoadingServerConfig);
   const [validationState, setValidationState] = useState<{
     isValidating: boolean;
     isValid: boolean | null;

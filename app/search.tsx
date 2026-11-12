@@ -33,7 +33,7 @@ export default function SearchScreen() {
   const textInputRef = useRef<TextInputInstance>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage, lastMessageAt, targetPage, clearMessage } = useRemoteControlStore();
-  const { remoteInputEnabled } = useSettingsStore();
+  const remoteInputEnabled = useSettingsStore((s) => s.remoteInputEnabled);
   const router = useRouter();
 
   // 搜索历史（V1.5）：进入页面时加载

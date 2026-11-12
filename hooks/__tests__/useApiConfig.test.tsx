@@ -14,6 +14,14 @@ jest.mock("@/stores/settingsStore", () => ({
 
 const settingsMock = useSettingsStore as unknown as jest.Mock;
 
+// 第 10 轮：useApiConfig 改按字段订阅（传 selector），mock 要应用 selector
+// 才返回对应字段，否则 apiBaseUrl 会拿到整个 state 对象
+function setMockSettings(state: { apiBaseUrl: string; serverConfig: unknown; isLoadingServerConfig: boolean }) {
+  settingsMock.mockImplementation((selector?: (s: typeof state) => unknown) =>
+    selector ? selector(state) : state,
+  );
+}
+
 function Probe() {
   const status = useApiConfig();
   return (
@@ -37,7 +45,7 @@ describe("useApiConfig isValidating 复位", () => {
 
   it("配置加载完成且拿到 serverConfig 后，isValidating 复位为 false", async () => {
     // 阶段 1：正在加载配置
-    settingsMock.mockReturnValue({
+    setMockSettings({
       apiBaseUrl: "https://example.com",
       serverConfig: null,
       isLoadingServerConfig: true,
@@ -48,7 +56,7 @@ describe("useApiConfig isValidating 复位", () => {
     expect(probeText(renderer.root)).toContain("validating:true");
 
     // 阶段 2：加载完成，拿到配置
-    settingsMock.mockReturnValue({
+    setMockSettings({
       apiBaseUrl: "https://example.com",
       serverConfig: { StorageType: "localstorage" },
       isLoadingServerConfig: false,
@@ -61,7 +69,7 @@ describe("useApiConfig isValidating 复位", () => {
   });
 
   it("配置加载完成但未拿到 serverConfig 时，isValidating 同样复位并报通用错误", async () => {
-    settingsMock.mockReturnValue({
+    setMockSettings({
       apiBaseUrl: "https://example.com",
       serverConfig: null,
       isLoadingServerConfig: true,
@@ -71,7 +79,7 @@ describe("useApiConfig isValidating 复位", () => {
     });
     expect(probeText(renderer.root)).toContain("validating:true");
 
-    settingsMock.mockReturnValue({
+    setMockSettings({
       apiBaseUrl: "https://example.com",
       serverConfig: null,
       isLoadingServerConfig: false,

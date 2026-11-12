@@ -77,7 +77,7 @@ function formatProgrammeTime(ts: number): string {
 }
 
 export default function LiveScreen() {
-  const { m3uUrl } = useSettingsStore();
+  const m3uUrl = useSettingsStore((s) => s.m3uUrl);
   const router = useRouter();
 
   // 响应式布局配置
