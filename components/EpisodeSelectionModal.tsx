@@ -23,6 +23,15 @@ export const EpisodeSelectionModal: React.FC = () => {
     }
   }, [showEpisodeModal, currentEpisodeIndex, episodeGroupSize]);
 
+  // 弹窗开着时换源导致总集数变少（如 100 集→10 集）：分组下标越界，
+  // slice 出空列表、当前集不可见。集数变化时把分组钳到合法范围。
+  useEffect(() => {
+    const maxGroup = Math.max(0, Math.ceil(episodes.length / episodeGroupSize) - 1);
+    if (selectedEpisodeGroup > maxGroup) {
+      setSelectedEpisodeGroup(maxGroup);
+    }
+  }, [episodes.length, episodeGroupSize, selectedEpisodeGroup]);
+
   const onSelectEpisode = (index: number) => {
     playEpisode(index);
     setShowEpisodeModal(false);

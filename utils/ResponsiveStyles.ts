@@ -135,6 +135,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
     },
 
     center: {
+      flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
     },

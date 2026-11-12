@@ -212,6 +212,12 @@ describe("UpdateService.checkVersion 确定性错误不重试（第 4 轮）", (
     await expect(updateService.checkVersion()).rejects.toThrow("HTTP 404");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("版本号格式非法不重试（第 14 轮 L10）：getDownloadUrl 抛错是确定性的", async () => {
+    fetchMock.mockResolvedValue(mockFetchResponse(200, JSON.stringify({ version: "not-a-version" })));
+    await expect(updateService.checkVersion()).rejects.toThrow("Invalid version format");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("UpdateService.verifyApkSha256 与 assertApkSizeAcceptable（第 4 轮）", () => {

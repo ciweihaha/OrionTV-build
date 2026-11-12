@@ -347,7 +347,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.info(`[INFO] Checking favorite status for source: ${source}, id: ${id}`);
         try {
           const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
-          set({ isFavorited });
+          // await 期间若新 init 已开始，旧视频的收藏状态不能写到新详情上
+          //（与 setDetail 同一守卫）
+          if (get().detail === finalState.detail) {
+            set({ isFavorited });
+          }
           logger.info(`[INFO] Favorite status: ${isFavorited}`);
         } catch (favoriteError) {
           logger.warn(`[WARN] Failed to check favorite status:`, favoriteError);

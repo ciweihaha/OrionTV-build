@@ -99,6 +99,9 @@ class UpdateService {
         let isDeterministic = false;
         if (e instanceof Error) {
           if (e.message === 'Invalid version info from server') isDeterministic = true;
+          // getDownloadUrl 抛的格式错误同样是确定性的：同一版本号重发
+          // 还是同一格式，不重试（旧代码漏了，多等 2 次退避约 12 秒）
+          else if (e.message.startsWith('Invalid version format')) isDeterministic = true;
           else if (e.message.startsWith('RESPONSE_TOO_LARGE')) isDeterministic = true;
           else {
             const httpMatch = e.message.match(/^HTTP (\d+)$/);

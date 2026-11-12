@@ -120,11 +120,15 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
         {
           text: "取消",
           style: "cancel",
+          // 点“取消”后立即点卡片：1 秒防误触窗口会把这次正常点击吃掉。
+          // 弹框已关，误触窗口的使命（挡长按后松手的 onPress）已完成，清掉它。
+          onPress: () => { longPressAt.current = 0; },
         },
         {
           text: "删除",
           style: "destructive",
           onPress: async () => {
+            longPressAt.current = 0;
             try {
               // Delete from local storage
               await PlayRecordManager.remove(source, id);

@@ -50,6 +50,16 @@ describe('parseEpgTime', () => {
     expect(parseEpgTime('not-a-time')).toBe(0);
     expect(parseEpgTime('20261112')).toBe(0);
   });
+
+  it('超范围日期返回 0（第 14 轮 L9）：13 月、32 日、2 月 30 日不静默进位', () => {
+    expect(parseEpgTime('20261312080000 +0800')).toBe(0);
+    expect(parseEpgTime('20261132080000 +0800')).toBe(0);
+    expect(parseEpgTime('20260230080000 +0800')).toBe(0);
+    expect(parseEpgTime('20261112250000 +0800')).toBe(0);
+    expect(parseEpgTime('20261112086000 +0800')).toBe(0);
+    // 闰年 2 月 29 日是合法的
+    expect(parseEpgTime('20280229080000 +0800')).toBe(Date.UTC(2028, 1, 29, 0, 0, 0));
+  });
 });
 
 describe('parseEpgXml', () => {
