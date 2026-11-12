@@ -24,7 +24,9 @@ const BREAKPOINTS = {
 const getDeviceType = (width: number): DeviceType => {
   if (Platform.isTV) return "tv";
 
-  if (width >= BREAKPOINTS.tv.min) return "tv";
+  // 非 TV 设备最高只判到 tablet：大平板横屏/桌面 Web 宽度 ≥1024 时，
+  // 旧逻辑会判为 tv，走固定 160px 卡片、5 列布局，且 nativeControls
+  // （deviceType !== 'tv'）被禁用，触屏设备没了原生控制条。
   if (width >= BREAKPOINTS.tablet.min) return "tablet";
   return "mobile";
 };

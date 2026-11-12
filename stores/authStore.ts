@@ -11,6 +11,18 @@ const logger = Logger.withTag('AuthStore');
 // 冷启动网络就绪重试：最大尝试次数与重试间隔（毫秒）
 const SERVER_CONFIG_MAX_ATTEMPTS = 3;
 const SERVER_CONFIG_RETRY_DELAY_MS = 1000;
+// 配置拉取失败缓存（毫秒）：服务器不可达时每次 fetchInitialData 都会
+// 串行重试 3 次 × 15 秒并重复弹 Toast；30 秒内失败过就直接跳过重试。
+const SERVER_CONFIG_FAILURE_CACHE_MS = 30_000;
+
+// 并发去重：多个请求同时 401 时只触发一次自动登录
+let restorePromise: Promise<void> | null = null;
+// 会话代次：logout 时 +1，restoreSession 成功写状态前校验代次——
+// 退出过程中在飞的自动登录完成时，代次已变，禁止把已退出的用户重新登入。
+let sessionGeneration = 0;
+// checkLoginStatus 并发去重与失败缓存
+let checkLoginPromise: Promise<void> | null = null;
+let lastConfigFailureAt = 0;
 
 interface AuthState {
   isLoggedIn: boolean;
@@ -23,9 +35,6 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-// 并发去重：多个请求同时 401 时只触发一次自动登录
-let restorePromise: Promise<void> | null = null;
-
 const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: false,
   isLoginModalVisible: false,
@@ -36,6 +45,14 @@ const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoggedIn: false, isLoginModalVisible: false });
       return;
     }
+    // 失败缓存：30 秒内配置拉取失败过，直接跳过（不重试 3 次、不重复弹 Toast）。
+    if (Date.now() - lastConfigFailureAt < SERVER_CONFIG_FAILURE_CACHE_MS) {
+      return;
+    }
+    // 并发去重：切分类/切筛选时多个 fetchInitialData 同时调，只跑一次
+    // （与 restoreSession 的 restorePromise 同款）。
+    if (!checkLoginPromise) {
+      checkLoginPromise = (async () => {
     try {
       // 确保拿到服务器配置。冷启动时第一次 getServerConfig 请求常因网络栈未就绪而失败，
       // 因此最多重试几次（每次间隔短暂等待），拿到 StorageType 才继续；全部失败才提示。
@@ -61,9 +78,12 @@ const useAuthStore = create<AuthState>((set, get) => ({
 
       if (!serverConfig?.StorageType) {
         // 到这里说明配置确实拉取失败（网络不通/地址错误/接口异常）
+        lastConfigFailureAt = Date.now();
         Toast.show({ type: "error", text1: "请检查网络或者服务器地址是否可用" });
         return;
       }
+      // 配置拿到，清失败缓存
+      lastConfigFailureAt = 0;
 
       const authToken = await AsyncStorage.getItem('authCookies');
       if (!authToken || authToken.trim() === '') {
@@ -98,11 +118,19 @@ const useAuthStore = create<AuthState>((set, get) => ({
         set({ isLoggedIn: false });
       }
     }
+      })().finally(() => {
+        checkLoginPromise = null;
+      });
+    }
+    return checkLoginPromise;
   },
   restoreSession: async () => {
     // 并发去重：多个 401 同时触发时只执行一次自动登录
     if (!restorePromise) {
       restorePromise = (async () => {
+        // 代次快照：退出过程中在飞的登录完成时，代次已变，禁止把已退出的
+        // 用户重新登入（logout 会让代次 +1）。
+        const gen = sessionGeneration;
         const creds = await LoginCredentialsManager.get();
         // 仅密码凭据也可用：localstorage 服务登录时只输密码，LoginModal 保存的
         // 是 {username: "", password}；只有用户名和密码都空才算无可用凭据
@@ -117,6 +145,8 @@ const useAuthStore = create<AuthState>((set, get) => ({
           // 有用户名的服务仍按原样传用户名，行为不变。
           const result = await api.login(creds.username || undefined, creds.password);
           if (result && result.ok) {
+            // 代次已变说明期间用户点了退出：不写登录态，退出保持生效
+            if (gen !== sessionGeneration) return;
             set({ isLoggedIn: true, isLoginModalVisible: false });
           } else {
             throw new Error("UNAUTHORIZED");
@@ -134,6 +164,9 @@ const useAuthStore = create<AuthState>((set, get) => ({
     return restorePromise;
   },
   logout: async () => {
+    // 代次 +1：使退出开始前已在飞的 restoreSession 失效（它完成时
+    // 代次对不上，不会把已退出的用户重新登入）。
+    sessionGeneration++;
     // 本地退出必须与远程登出解耦：远程请求失败（离线/超时）只记日志，
     // 绝不能阻断本地凭据清除与状态更新——否则用户在断网时退不出去，
     // 且残留的凭据会被 restoreSession 拿去自动重登，等于没有退出。

@@ -135,6 +135,14 @@ export const useVideoHandlers = ({
 
   // Subscribe to player events. Re-subscribes when the player instance changes
   // (useVideoPlayer recreates it if replaceAsync fails).
+  // player 实例重建时复位就绪标记：expo-video 在 replaceAsync 失败时用同一
+  // URL 重建实例，URL 不变的 effect 不会跑；不复位的话新实例就绪时
+  // readyHandledForRef 仍是旧 URL，整个就绪分支被跳过（不 seek、不自动
+  // 播放、isLoading 永久 true，20 秒后被误判为网络失败而换源）。
+  useEffect(() => {
+    readyHandledForRef.current = null;
+  }, [player]);
+
   useEffect(() => {
     if (!player) return;
 
@@ -186,18 +194,22 @@ export const useVideoHandlers = ({
           emit({ isLoaded: false, isBuffering: true, isPlaying: false, didJustFinish: false });
         } else if (status === 'error') {
           const message = error?.message || 'Unknown player error';
-          emit({ isLoaded: false, isPlaying: false, isBuffering: false, error: message });
+          emit({ isLoaded: false, isPlaying: false, isBuffering: false, error: message, didJustFinish: false });
           usePlayerStore.setState({ isLoading: false });
           onError(message);
         }
         // 'idle': nothing to emit until a source loads.
       }),
       player.addListener('playingChange', ({ isPlaying }) => {
+        // 显式带 didJustFinish: false：statusRef 会残留 playToEnd 置的 true，
+        // 相邻两集 URL 相同时（单文件源），playEpisode 调 replay() 后
+        // playingChange 立即触发，残留的 true 会让 store 再跳一集（连跳两集）。
         emit({
           isPlaying,
           isLoaded: player.status === 'readyToPlay',
           positionMillis: player.currentTime * 1000,
           durationMillis: Number.isFinite(player.duration) ? player.duration * 1000 : null,
+          didJustFinish: false,
         });
       }),
       player.addListener('timeUpdate', ({ currentTime }) => {

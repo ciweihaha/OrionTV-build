@@ -194,9 +194,16 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
   fetchInitialData: async (options?: { keepFilterRow?: boolean }) => {
     const { apiBaseUrl } = useSettingsStore.getState();
-    await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
-
     const { selectedCategory, regionFilter, yearFilter } = get();
+    // 登录检查只对最近播放串行等（loadMoreData 的 record 分支要读 isLoggedIn）；
+    // CMS/豆瓣内容不依赖登录态，串行等会让服务器不可达时的 3×15 秒重试
+    // 拖住全部内容加载，改为后台跑（authStore 内有失败缓存与去重）。
+    if (selectedCategory.type === 'record') {
+      await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
+    } else {
+      void useAuthStore.getState().checkLoginStatus(apiBaseUrl);
+    }
+
     const cacheKey = getCacheKey(selectedCategory, regionFilter, yearFilter);
 
     // 最近播放不缓存，始终实时获取
@@ -286,7 +293,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               source,
               // total_time 为 0（保存时没拿到片长）时直接除会得到 Infinity/NaN，
               // 续播进度条拿去算宽度会直接坏掉
-              progress: record.total_time > 0 ? record.play_time / record.total_time : 0,
+              progress: record.total_time > 0 ? Math.min(1, Math.max(0, record.play_time / record.total_time)) : 0,
               poster: record.cover,
               sourceName: record.source_name,
               episodeIndex: record.index,
@@ -617,6 +624,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
         aggPage: 0,
         hasMore: true,
         error: null,
+        // 旧分类的 loadMore 还在飞时切分类，旧请求 finally 因 isStale 跳过
+        // 清理；缓存命中路径不发新请求，无人再清 loadingMore，底部转圈
+        // 会永久显示——切分类时直接复位。
+        loadingMore: false,
         // 切分类时筛选回到全部，不把上个分类的筛选带过来。
         regionFilter: null,
         yearFilter: null,
@@ -679,17 +690,15 @@ const useHomeStore = create<HomeState>((set, get) => ({
     await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
     const { isLoggedIn } = useAuthStore.getState();
     if (!isLoggedIn) {
-      set((state) => {
-        const recordCategoryExists = state.categories.some((c) => c.type === "record");
-        if (recordCategoryExists) {
-          const newCategories = state.categories.filter((c) => c.type !== "record");
-          if (state.selectedCategory.type === "record") {
-            get().selectCategory(newCategories[0] || null);
-          }
-          return { categories: newCategories };
-        }
-        return {};
-      });
+      // updater 应为纯函数：selectCategory（含嵌套 set 与异步加载）不能在
+      // updater 内调，时序脆弱；先算新分类，set 之后再切（分类为空时不切）。
+      const { categories, selectedCategory } = get();
+      if (!categories.some((c) => c.type === "record")) return;
+      const newCategories = categories.filter((c) => c.type !== "record");
+      set({ categories: newCategories });
+      if (selectedCategory.type === "record" && newCategories.length > 0) {
+        get().selectCategory(newCategories[0]);
+      }
       return;
     }
     const records = await PlayRecordManager.getAll();

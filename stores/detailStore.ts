@@ -360,7 +360,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
       logger.info(`[PERF] Favorite check took ${(favoriteCheckEnd - favoriteCheckStart).toFixed(2)}ms`);
       
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
+      // 取消识别与内层一致：Expo 原生 fetch 的取消错误 name 是 `Error`
+      // （message 含 canceled），只认 AbortError 会漏判，把取消写成“搜索失败”。
+      if (!isCancelError(e)) {
         logger.error(`[ERROR] DetailStore.init caught unexpected error:`, e);
         const errorMessage = e instanceof Error ? e.message : "获取数据失败";
         set({ error: `搜索失败：${errorMessage}` });
@@ -403,7 +405,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       title,
       poster,
       source_name,
-      total_episodes: episodes.length,
+      total_episodes: episodes?.length ?? 0,
       search_title: get().q!,
       year: year || "",
     };
