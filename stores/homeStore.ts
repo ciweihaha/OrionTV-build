@@ -216,6 +216,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
     // 检查缓存
     if (dataCache.has(cacheKey) && isValidCache(dataCache.get(cacheKey)!)) {
       const cachedData = dataCache.get(cacheKey)!;
+      // 真 LRU：命中时把条目移到末尾（Map 按插入序，淘汰时删第一个）。
+      // 原来只按插入序淘汰，常用分类可能被不常用的挤掉。
+      dataCache.delete(cacheKey);
+      dataCache.set(cacheKey, cachedData);
       set({
         loading: false,
         contentData: cachedData.data,
@@ -428,6 +432,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
         } else {
           const existingCache = dataCache.get(cacheKey);
           if (existingCache && existingCache.data.length < MAX_ITEMS_PER_CACHE) {
+            // 真 LRU：Map.set 不改变已有 key 的插入序，先删再设才移到末尾
+            dataCache.delete(cacheKey);
             dataCache.set(cacheKey, {
               ...existingCache,
               data: [...existingCache.data, ...newItems].slice(0, MAX_ITEMS_PER_CACHE),
