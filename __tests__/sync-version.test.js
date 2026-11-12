@@ -10,9 +10,15 @@ describe('versionCodeFor', () => {
     expect(versionCodeFor('1.10.3')).toBe(11003);
   });
 
-  it('ignores prerelease/build suffixes', () => {
-    expect(versionCodeFor('1.6.9-beta.1')).toBe(10609);
+  it('ignores build metadata suffixes (semver: no precedence effect)', () => {
     expect(versionCodeFor('1.6.9+build.5')).toBe(10609);
+  });
+
+  it('refuses prerelease versions (no distinct code under the rule)', () => {
+    // 旧行为静默返回稳定版的 code：1.7.0-beta.1 与 1.7.0 都是 10700，
+    // Android 视同一次构建，正式版无法覆盖升级 beta
+    expect(() => versionCodeFor('1.6.9-beta.1')).toThrow(/Prerelease version/);
+    expect(() => versionCodeFor('1.7.0-rc.1+build.2')).toThrow(/Prerelease version/);
   });
 
   it('is monotonic across patch and minor bumps', () => {
@@ -30,6 +36,12 @@ describe('versionCodeFor', () => {
 
 describe('parseVersion', () => {
   it('splits a plain semver version', () => {
-    expect(parseVersion('1.6.8')).toEqual({ major: 1, minor: 6, patch: 8 });
+    expect(parseVersion('1.6.8')).toEqual({ major: 1, minor: 6, patch: 8, prerelease: null, build: null });
+  });
+
+  it('captures prerelease and build parts separately', () => {
+    expect(parseVersion('1.7.0-beta.1+build.2')).toEqual({
+      major: 1, minor: 7, patch: 0, prerelease: 'beta.1', build: 'build.2',
+    });
   });
 });
