@@ -145,8 +145,16 @@ const useAuthStore = create<AuthState>((set, get) => ({
           // 有用户名的服务仍按原样传用户名，行为不变。
           const result = await api.login(creds.username || undefined, creds.password);
           if (result && result.ok) {
-            // 代次已变说明期间用户点了退出：不写登录态，退出保持生效
-            if (gen !== sessionGeneration) return;
+            // 代次已变说明期间用户点了退出：只拦 set 不够——api.login 已成功，
+            // 服务端会话已建、cookie 已入 jar、authCookies 标记已重写（logout
+            // 清掉的标记又回来了）。必须撤销副作用，否则下次冷启动
+            // checkLoginStatus 读到标记直接当已登录，退出失效。api.logout 的
+            // finally 会清标记并使服务端会话失效；登出请求本身失败也不影响，
+            // 标记清除在 finally 里且自带 try/catch。
+            if (gen !== sessionGeneration) {
+              await api.logout().catch(() => {});
+              return;
+            }
             set({ isLoggedIn: true, isLoginModalVisible: false });
           } else {
             throw new Error("UNAUTHORIZED");

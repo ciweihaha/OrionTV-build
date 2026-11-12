@@ -156,7 +156,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isLoading: true,
     });
 
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title;
+    // id 也要比对：同一源上同名不同 id 的两部片（如同名翻拍），只比 title
+    // 会走缓存捷径播错片（episodesSelectorBySource 只按源取第一条，缓存的
+    // detail 是另一部片，记录也记到另一部片的 id 下）。id 是精确身份，
+    // 与详情页 selectPreferredResults 的 id 优先语义一致。
+    const needsDetailInit =
+      !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.id.toString() !== id;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
 
     if (needsDetailInit) {
