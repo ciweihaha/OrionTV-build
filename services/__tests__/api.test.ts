@@ -470,3 +470,41 @@ describe("API.getResources 超时重试一次（1.6.7 实测 bug）", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("API 空响应体不抛 TypeError", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // 空响应体：readJsonLimited 返回 null（见 api.ts 空体注释）。
+  function emptyBodyResponse() {
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      body: undefined,
+      text: async () => "",
+    } as unknown as Response;
+  }
+
+  it("searchVideo 空响应体时返回空结果，不抛 TypeError", async () => {
+    fetchMock.mockResolvedValue(emptyBodyResponse());
+    const res = await api.searchVideo("蜘蛛侠", "res1");
+    expect(res).toEqual({ results: [] });
+  });
+
+  it("getResources 空响应体时返回空数组，不返回 null", async () => {
+    fetchMock.mockResolvedValue(emptyBodyResponse());
+    const res = await api.getResources();
+    expect(res).toEqual([]);
+  });
+});

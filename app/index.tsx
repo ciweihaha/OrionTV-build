@@ -112,7 +112,14 @@ export default function HomeScreen() {
     }
 
     // 只有在API配置完成且分类有效时才获取数据
-    if (apiConfigStatus.isConfigured && !apiConfigStatus.needsConfiguration) {
+    // 例外：最近播放是本地记录，不依赖服务器，未配服务器时也加载
+    // （未登录时 store 直接返回空列表，不会发请求；不放行会在未配置时
+    // 永远停在 loading 转圈）。
+    const isRecordCategory = selectedCategory.type === "record";
+    if (
+      (apiConfigStatus.isConfigured && !apiConfigStatus.needsConfiguration) ||
+      isRecordCategory
+    ) {
       // 对于有标签的分类，需要确保有标签才获取数据
       if (selectedCategory.tags && selectedCategory.tag) {
         fetchInitialData();
@@ -169,6 +176,8 @@ export default function HomeScreen() {
   };
 
   const isCmsCategory = !!selectedCategory?.cmsType;
+  // 最近播放是本地记录分类，同样不依赖服务器配置（与 CMS 同理豁免）。
+  const isRecordCategory = selectedCategory?.type === "record";
 
   // 年代选项：全部 + 当前年份往回 6 年，首屏算一次即可（跨年需重进应用才更新）。
   const yearOptions = React.useMemo(() => getYearOptions(), []);
@@ -214,11 +223,13 @@ export default function HomeScreen() {
   // CMS 分类不走这条：agg 地址硬编码直连，不依赖用户服务器；未配服务器时
   // CMS 内容照样能加载，配置提示不能盖住它（否则动漫/综艺这类无 tags 的
   // CMS 分类在新装应用上永远显示“请配置服务器地址”，用户以为连不上网）。
+  // 最近播放（本地记录）同样豁免：本地数据不需要服务器配置。
   const shouldShowApiConfig =
     apiConfigStatus.needsConfiguration &&
     selectedCategory &&
     !selectedCategory.tags &&
-    !selectedCategory.cmsType;
+    !selectedCategory.cmsType &&
+    !isRecordCategory;
 
   // TV端和平板端的顶部导航
   const renderHeader = () => {
@@ -440,14 +451,14 @@ export default function HomeScreen() {
             {getApiConfigErrorMessage(apiConfigStatus)}
           </ThemedText>
         </View>
-      ) : apiConfigStatus.isValidating && !isCmsCategory ? (
+      ) : apiConfigStatus.isValidating && !isCmsCategory && !isRecordCategory ? (
         <View style={commonStyles.center}>
           <ActivityIndicator size="large" />
           <ThemedText type="subtitle" style={{ padding: spacing, textAlign: "center" }}>
             正在验证服务器配置...
           </ThemedText>
         </View>
-      ) : apiConfigStatus.error && !apiConfigStatus.isValid && !isCmsCategory ? (
+      ) : apiConfigStatus.error && !apiConfigStatus.isValid && !isCmsCategory && !isRecordCategory ? (
         <View style={commonStyles.center}>
           <ThemedText type="subtitle" style={{ padding: spacing, textAlign: "center" }}>
             {apiConfigStatus.error}
