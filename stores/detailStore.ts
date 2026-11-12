@@ -4,6 +4,7 @@ import { getResolutionFromM3U8 } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
 import { Logger } from "@/utils/Logger";
+import Toast from "react-native-toast-message";
 
 const logger = Logger.withTag('DetailStore');
 
@@ -399,7 +400,15 @@ const useDetailStore = create<DetailState>((set, get) => ({
     // 先复位：收藏检查是异步的，窗口期内会显示上一个源的爱心状态
     set({ detail, isFavorited: false });
     const { source, id } = detail;
-    const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
+    // 收藏检查失败不抛错：4 处调用点（详情页源切换 ×2、选源弹窗、
+    // loadVideo 回落）都不 catch，redis 下网络抖动会产生未处理拒绝。
+    // 失败时保持 isFavorited: false（已复位），只记日志。
+    let isFavorited = false;
+    try {
+      isFavorited = await FavoriteManager.isFavorited(source, id.toString());
+    } catch (error) {
+      logger.warn(`[DetailStore] Failed to check favorite status for ${source}:`, error);
+    }
     // 切源很快时，旧的收藏检查可能后返回：只给当前仍在显示的详情写，
     // 否则会把上一个源的收藏状态写到新源上
     if (get().detail === detail) {
@@ -426,7 +435,17 @@ const useDetailStore = create<DetailState>((set, get) => ({
       year: year || "",
     };
 
-    const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
+    // 收藏切换失败不抛错：详情页两个收藏按钮都不 catch，redis 下网络
+    // 抖动会产生未处理拒绝、点收藏无任何反馈。失败时 Toast 提示，用户
+    // 可重试；isFavorited 保持原值（不写）。
+    let newIsFavorited: boolean;
+    try {
+      newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
+    } catch (error) {
+      logger.warn(`[DetailStore] Failed to toggle favorite for ${source}:`, error);
+      Toast.show({ type: "error", text1: "收藏失败", text2: "请检查网络后重试" });
+      return;
+    }
     // 切源快时旧的 toggle 可能后返回：只给当前仍在显示的详情写（与
     // setDetail / init 末尾的收藏检查同款身份守卫），否则旧源的收藏
     // 状态会写到新源上

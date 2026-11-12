@@ -628,24 +628,19 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
       set({ error: errorMessage });
     } finally {
-      // 只清属于本次加载的标记：旧请求（上一组筛选）的 finally 不能把
-      // 新请求的标记清掉，否则新请求还在飞时又来一次加载会被放行，
-      // 造成同一页重复请求。
-      if (
-        activeLoadCategory === loadCategory &&
-        activeLoadRegion === loadRegion &&
-        activeLoadYear === loadYear
-      ) {
+      // 只清属于本次加载的标记与 loading：用控制器身份判断，不用分类/筛选
+      // 身份——同分类二次加载时（selectCategory + 首页 effect 各调一次
+      // fetchInitialData）两代的分类/筛选完全相同，旧请求的 finally 按
+      // 分类身份会通过守卫，提前清掉新请求的防重标记（随后滚动触发的
+      // loadMore 不再被挡，会 abort 新请求）并把 loading 置 false（新
+      // 请求还在飞、contentData 已被第二轮清空，首页闪一下空态）。
+      // 控制器身份是代次：只有最新一次加载的 controller 才等于
+      // activeLoadController，被取代的旧请求什么都不清。
+      if (activeLoadController === loadController) {
         activeLoadCategory = null;
         activeLoadRegion = null;
         activeLoadYear = null;
-        if (activeLoadController === loadController) {
-          activeLoadController = null;
-        }
-      }
-      // 分类已变：旧请求的 finally 不能清新分类的 loading/loadingMore，
-      // 否则新分类还在加载，首页会先闪一下“暂无内容”
-      if (!isStale()) {
+        activeLoadController = null;
         set({ loading: false, loadingMore: false });
       }
     }

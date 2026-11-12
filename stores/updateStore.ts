@@ -98,11 +98,17 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         });
       }
 
-      // 保存最后检查时间
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.LAST_CHECK_TIME,
-        Date.now().toString()
-      );
+      // 保存最后检查时间：单独 try/catch——写失败（存储满/权限问题）不能
+      // 掩盖已成功的版本检查，否则 catch 会置 error + updateAvailable:
+      // false，有更新也不弹 Modal
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.LAST_CHECK_TIME,
+          Date.now().toString()
+        );
+      } catch (storageError) {
+        logger.warn('保存最后检查时间失败:', storageError);
+      }
     } catch (error) {
       logger.warn('检查更新失败:', error);
       set({ 

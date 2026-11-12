@@ -134,6 +134,37 @@ describe("homeStore 无服务器场景（1.2.0 连不上网复现）", () => {
     expect(useHomeStore.getState().error).toBe("加载失败，请重试");
   });
 
+  it("同分类二次加载：旧请求 finally 不提前清 loading（第 19 轮 F1）", async () => {
+    // selectCategory + 首页 effect 各调一次 fetchInitialData，第二次 abort
+    // 第一次；两代分类/筛选相同，finally 按分类身份会通过守卫，提前把
+    // 新请求还在飞的 loading 清掉、首页闪空态。控制器身份才能区分两代。
+    let rejectFirst!: (e: Error) => void;
+    const firstPromise = new Promise<never>((_, reject) => { rejectFirst = reject; });
+    let resolveSecond!: (v: any) => void;
+    const secondPromise = new Promise<any>((resolve) => { resolveSecond = resolve; });
+    getAggMock
+      .mockReturnValueOnce(firstPromise)
+      .mockReturnValueOnce(secondPromise);
+    const store = useHomeStore.getState();
+    store.selectCategory(store.categories.find((c: any) => c.title === "电影"));
+    // 第二次加载（模拟首页 effect 的重复调用）：abort 第一次
+    useHomeStore.getState().fetchInitialData();
+    await waitFor(() => getAggMock.mock.calls.length === 2);
+    // 第一次被 abort 后以 AbortError 拒绝：catch 静默返回，finally 执行
+    const abortError = new Error("The user aborted a request.");
+    abortError.name = "AbortError";
+    rejectFirst(abortError);
+    // 给 finally 一个微任务周期执行，再断言 loading 仍为 true（新请求在飞）
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useHomeStore.getState().loading).toBe(true);
+    // 第二次完成：内容写回、loading 清掉
+    resolveSecond(UNFILTERED);
+    await waitFor(() => useHomeStore.getState().loading === false);
+    expect(useHomeStore.getState().contentData.map((i: any) => i.title)).toEqual([
+      "未筛影片A", "未筛影片B",
+    ]);
+  });
+
   it("无服务器时 agg 首屏空列表：不回落豆瓣，直接显示空态且无错误", async () => {
     getAggMock.mockResolvedValue(EMPTY);
     selectMovie();

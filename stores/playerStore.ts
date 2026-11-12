@@ -700,6 +700,16 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // 播放页钉死在 isLoading=false 的假加载屏上、无自动恢复
       const freshEpisodeIndex = get().currentEpisodeIndex;
 
+      // await 期间用户切了集：当前集已不是失败的那个 URL，新集在原源
+      // 播得好好的，迟到的回落不能把它换到回落源上。入口的 URL 检查只
+      // 在调用时做一次，这里必须重做。
+      const currentUrlAfterAwait = selectCurrentEpisode(get())?.url;
+      if (currentUrlAfterAwait && currentUrlAfterAwait !== failedUrl) {
+        logger.info(`[VIDEO_ERROR] Episode changed during fallback (now ${currentUrlAfterAwait.substring(0, 100)}), ignoring`);
+        handlingErrorUrl = null;
+        return;
+      }
+
       // 重新加载当前集数的episodes
       const newEpisodes = fallbackSource.episodes || [];
       if (newEpisodes.length > freshEpisodeIndex) {
