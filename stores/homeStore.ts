@@ -148,7 +148,10 @@ interface HomeState {
   // 当前列表是否来自 CMS：CMS 成功加载后 true，回落豆瓣/切分类时 false。
   // 筛选行只在 true 时渲染（豆瓣数据无地区/年代字段，不假装能筛）。
   cmsFilterAvailable: boolean;
-  fetchInitialData: () => Promise<void>;
+  // keepFilterRow：筛选触发的重载传 true——加载期间不把筛选行卸掉，
+  // 否则电视上焦点会被抢走，重载完焦点又被 hasTVPreferredFocus 拉回“全部”，
+  // 用户再按 OK 会点到“全部”把刚选的筛选撤掉，看起来像“筛了没用”。
+  fetchInitialData: (options?: { keepFilterRow?: boolean }) => Promise<void>;
   loadMoreData: () => Promise<void>;
   selectCategory: (category: Category) => void;
   setRegionFilter: (region: string | null) => void;
@@ -183,7 +186,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
   yearFilter: null,
   cmsFilterAvailable: false,
 
-  fetchInitialData: async () => {
+  fetchInitialData: async (options?: { keepFilterRow?: boolean }) => {
     const { apiBaseUrl } = useSettingsStore.getState();
     await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
 
@@ -213,7 +216,17 @@ const useHomeStore = create<HomeState>((set, get) => ({
       return;
     }
 
-    set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null, cmsFilterAvailable: false });
+    // 筛选触发的重载不卸筛选行：行还在，焦点就还留在刚点的选项上；
+    // 切分类/首次加载时保持原来的 false（行要等 CMS 成功后才出现）。
+    set({
+      loading: true,
+      contentData: [],
+      pageStart: 0,
+      aggPage: 0,
+      hasMore: true,
+      error: null,
+      cmsFilterAvailable: options?.keepFilterRow ? get().cmsFilterAvailable : false,
+    });
     await get().loadMoreData();
   },
 
@@ -506,7 +519,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
       set({ error: errorMessage });
     } finally {
-      if (activeLoadCategory === loadCategory) {
+      // 只清属于本次加载的标记：旧请求（上一组筛选）的 finally 不能把
+      // 新请求的标记清掉，否则新请求还在飞时又来一次加载会被放行，
+      // 造成同一页重复请求。
+      if (
+        activeLoadCategory === loadCategory &&
+        activeLoadRegion === loadRegion &&
+        activeLoadYear === loadYear
+      ) {
         activeLoadCategory = null;
         activeLoadRegion = null;
         activeLoadYear = null;
@@ -566,12 +586,13 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
   // 切筛选：值没变或不在 CMS 分类下不做事；否则记下新值并重拉首屏。
   // fetchInitialData 会按含筛选值的新缓存键查缓存，命中则直接用缓存。
+  // 重载带 keepFilterRow：加载期间筛选行不卸，电视焦点不丢。
   setRegionFilter: (region: string | null) => {
     const { regionFilter, selectedCategory } = get();
     if (region === regionFilter) return;
     if (!selectedCategory?.cmsType) return;
     set({ regionFilter: region });
-    get().fetchInitialData();
+    get().fetchInitialData({ keepFilterRow: true });
   },
 
   setYearFilter: (year: string | null) => {
@@ -579,7 +600,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
     if (year === yearFilter) return;
     if (!selectedCategory?.cmsType) return;
     set({ yearFilter: year });
-    get().fetchInitialData();
+    get().fetchInitialData({ keepFilterRow: true });
   },
 
   refreshPlayRecords: async () => {

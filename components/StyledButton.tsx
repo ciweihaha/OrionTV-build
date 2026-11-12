@@ -67,8 +67,15 @@ const variantStyles = {
       backgroundColor: "rgba(119, 119, 119, 0.2)",
       borderColor: colors.primary,
     },
-    selectedButton: {},
-    selectedText: {},
+    // 选中态必须看得见：原来这里是两个空对象 {}，?? 回退不会触发
+    // （{} 不是 null/undefined），选中和没选中长得一模一样，用户在
+    // 电视上点筛选后完全看不出选了哪个。改成与 default 一致的绿底。
+    selectedButton: {
+      backgroundColor: colors.primary,
+    },
+    selectedText: {
+      color: Colors.dark.text,
+    },
   }),
 };
 
