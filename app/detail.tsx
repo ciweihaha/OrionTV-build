@@ -53,6 +53,10 @@ export default function DetailScreen() {
       params: {
         // Pass necessary identifiers, the rest will be in the store
         q: detail.title,
+        // 补传 title（与 VideoCard 一致）：play.tsx 的 title = videoTitle || detail?.title，
+        // 不传时依赖 store；自动换源回落改写 detail.title 会触发 play 主 effect 重跑，
+        // reset() + loadVideo(路由集数，原失败源)，把用户从当前集拉回最初集数。
+        title: detail.title,
         source: detail.source,
         id: detail.id.toString(),
         episodeIndex: episodeIndex.toString(),

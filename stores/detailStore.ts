@@ -29,6 +29,31 @@ async function runWithConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: nu
   return results;
 }
 
+/**
+ * 标题归一化（去空白、小写）：搜“庆余年”时“庆余年第二季”不算精确匹配，
+ * 但“庆余年 ”（尾空格）/大小写差异算。searchVideo 只做子串匹配，
+ * 不过滤会把续集/同名前缀影片混进详情页。
+ */
+function normalizeTitleForMatch(title: string): string {
+  return title.replace(/\s+/g, "").toLowerCase();
+}
+
+/**
+ * 首选源结果筛选：id 优先（调用方传 id 就是为了定位具体哪部影片），
+ * id 对不上时退到精确标题；两者都对不上时返回原结果（不丢源，
+ * 服务端排序兜底），同源去重在 processAndSetResults 里统一做。
+ */
+function selectPreferredResults(results: SearchResult[], q: string, id?: string): SearchResult[] {
+  if (id) {
+    const byId = results.filter((r) => String(r.id) === String(id));
+    if (byId.length > 0) return byId;
+  }
+  const normalizedQuery = normalizeTitleForMatch(q);
+  const byTitle = results.filter((r) => r.title && normalizeTitleForMatch(r.title) === normalizedQuery);
+  if (byTitle.length > 0) return byTitle;
+  return results;
+}
+
 export type SearchResultWithResolution = SearchResult & { resolution?: string | null };
 
 interface DetailState {
@@ -106,12 +131,23 @@ const useDetailStore = create<DetailState>((set, get) => ({
         episodes: Array.isArray(r.episodes) ? r.episodes : [],
       }));
 
+      // 按源去重：同一源多条结果（搜“庆余年”带回“庆余年第二季”）会让
+      // 详情页出现重复源按钮（key={item.source}），且 episodesSelectorBySource
+      // （.find 只按源）永远取第一条的剧集，播错片。只留第一条
+      // （服务端按相关性排序）；合并路径原有去重只防已有源，不防批次内重复。
+      const seenSources = new Set<string>();
+      const dedupedResults = normalizedResults.filter((r) => {
+        if (seenSources.has(r.source)) return false;
+        seenSources.add(r.source);
+        return true;
+      });
+
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        const newResults = normalizedResults.filter((r) => !existingSources.has(r.source));
+        const newResults = dedupedResults.filter((r) => !existingSources.has(r.source));
         const finalResults: SearchResultWithResolution[] = merge
           ? [...state.searchResults, ...newResults]
-          : normalizedResults;
+          : dedupedResults;
 
         return {
           searchResults: finalResults,
@@ -128,7 +164,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写。
       // 并发上限 5：每个源 1 个 m3u8 检测，源多时全部并行会瞬间占满连接池（L18b）
       void runWithConcurrencyLimit(
-        normalizedResults.map((searchResult) => async () => {
+        dedupedResults.map((searchResult) => async () => {
           let resolution;
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
@@ -178,7 +214,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
         // 检查preferred source结果
         if (preferredResult.length > 0) {
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
-          await processAndSetResults(preferredResult, false);
+          // searchVideo 只做子串匹配：搜“庆余年”会带回“庆余年第二季”，
+          // 不过滤就原样写入，详情页会出现同源两条结果（重复 key、播错片）。
+          // id 优先、精确标题兜底（见 selectPreferredResults）；id 参数
+          // 以前只在分支判断里用过一次、从未用于筛选结果。
+          await processAndSetResults(selectPreferredResults(preferredResult, q, id), false);
           // 换详情/离开页面时 processAndSetResults 不抛错直接返回（已取消），
           // 这里不能无条件清 loading，否则会把新一次 init 的加载指示提前关掉
           if (!signal.aborted) set({ loading: false });
@@ -282,14 +322,27 @@ const useDetailStore = create<DetailState>((set, get) => ({
               logger.info(`[PERF] API searchVideo (${resource.name}) took ${(searchEnd - searchStart).toFixed(2)}ms, results: ${results.length}`);
               
               if (results.length > 0) {
-                totalResults += results.length;
-                logger.info(`[SUCCESS] Source "${resource.name}" found ${results.length} results for "${q}"`);
-                await processAndSetResults(results, true);
-                if (!firstResultFound) {
-                  // 已取消时不碰 loading：新一次 init 正在加载，关掉它会闪“未找到”
-                  if (!signal.aborted) set({ loading: false }); // Stop loading indicator on first result
-                  firstResultFound = true;
-                  logger.info(`[SUCCESS] First result found from "${resource.name}", stopping loading indicator`);
+                // 与回落/后台分支一致：只留精确标题匹配（归一化后比较）。
+                // searchVideo 只做子串匹配，不过滤会把续集/同名前缀影片
+                // 当成同一部影片的源（播错片）。无精确匹配时该源不贡献结果。
+                const normalizedQuery = normalizeTitleForMatch(q);
+                const exactResults = results.filter(
+                  (r) => r.title && normalizeTitleForMatch(r.title) === normalizedQuery,
+                );
+                if (exactResults.length === 0) {
+                  logger.info(
+                    `[SKIP] Source "${resource.name}" returned ${results.length} results for "${q}", none exactly matching`,
+                  );
+                } else {
+                  totalResults += exactResults.length;
+                  logger.info(`[SUCCESS] Source "${resource.name}" found ${exactResults.length} results for "${q}"`);
+                  await processAndSetResults(exactResults, true);
+                  if (!firstResultFound) {
+                    // 已取消时不碰 loading：新一次 init 正在加载，关掉它会闪“未找到”
+                    if (!signal.aborted) set({ loading: false }); // Stop loading indicator on first result
+                    firstResultFound = true;
+                    logger.info(`[SUCCESS] First result found from "${resource.name}", stopping loading indicator`);
+                  }
                 }
               } else {
                 logger.warn(`[WARN] Source "${resource.name}" returned 0 results for "${q}"`);

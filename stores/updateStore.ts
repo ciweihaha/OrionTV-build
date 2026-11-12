@@ -200,7 +200,19 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     const { remoteVersion } = get();
     
     if (remoteVersion) {
-      await AsyncStorage.setItem(STORAGE_KEYS.SKIP_VERSION, remoteVersion);
+      // 与 checkForUpdate 的 setItem 同款处理（F9）：写操作失败时不抛未处理拒绝，
+      // 弹窗保持打开并 Toast 提示，用户可重试；否则 set 不执行、弹窗卡住，
+      // 下次检查还会再弹同一版本。
+      try {
+        await AsyncStorage.setItem(STORAGE_KEYS.SKIP_VERSION, remoteVersion);
+      } catch (e) {
+        logger.warn('跳过版本保存失败:', e);
+        Toast.show({
+          type: 'error',
+          text1: '跳过失败，请重试',
+        });
+        return;
+      }
       set({ 
         skipVersion: remoteVersion,
         showUpdateModal: false,
