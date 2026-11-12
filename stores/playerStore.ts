@@ -209,7 +209,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         if (sourceWithEpisodes) {
           logger.info(`[FALLBACK] Using alternative source "${sourceWithEpisodes.source}" with ${sourceWithEpisodes.episodes.length} episodes`);
           episodes = sourceWithEpisodes.episodes;
-          // 更新detail为有episodes的source
+          // 更新detail为有episodes的source：必须同步写回 detailStore，
+          // 否则播放器播的是回落源，detailStore.detail 仍是无剧集的旧源，
+          // 后续播放记录/倍速/片头标记全记到旧源上，源名显示也错。
+          // setDetail 首行即同步 set({ detail })，收藏检查在后台且有守卫。
+          void useDetailStore.getState().setDetail(sourceWithEpisodes);
           detail = sourceWithEpisodes;
         } else {
           logger.error(`[ERROR] No source with episodes found in searchResults`);

@@ -616,6 +616,9 @@ export default function LiveScreen() {
       // 但自动跳台已耗尽（failCount > MAX_AUTO_SKIP）时同台重试无意义，
       // OK 改开面板让用户手动选台——否则 OK 永远被重试劫持，面板打不开。
       if (t === "select") {
+        // 无频道时不处理：空态指引按钮（去设置/重试）自带焦点与 onPress，
+        // 这里若同时 openPanel，两个通道都会触发（跳转/重载背后盖上空面板）
+        if (channels.length === 0) return;
         if (failCountRef.current > 0 && failCountRef.current <= MAX_AUTO_SKIP) {
           selectChannelByIndex(currentChannelIndex, channels);
         } else {

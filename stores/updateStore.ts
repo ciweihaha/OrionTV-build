@@ -77,7 +77,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         updateAvailable: isUpdateAvailable,
         lastCheckTime: Date.now(),
         skipVersion,
-        showUpdateModal: shouldShowUpdate && !silent,
+        // 有更新就弹 Modal，无论是否静默：silent 只应抑制“已是最新版本”
+        // 的 Toast（下面单独处理）。旧代码静默时恒不弹，冷启动自动检查
+        // 发现新版也无人知晓，自动更新功能实际无效。
+        showUpdateModal: shouldShowUpdate,
         isLatestVersion: isLatest,
       });
 

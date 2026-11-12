@@ -181,7 +181,9 @@ export default function SearchScreen() {
     showRemoteModal('search');
   };
 
-  const renderItem = ({ item, ref }: { item: SearchResult; index: number; ref?: React.Ref<any> }) => (
+  // renderItem 稳定引用：CustomScrollView 已 memo（第 11 轮），内联函数会让
+  // memo 每渲染都失效；只依赖模块单例 api，空依赖即可
+  const renderItem = useCallback(({ item, ref }: { item: SearchResult; index: number; ref?: React.Ref<any> }) => (
     <VideoCard
       ref={ref}
       id={item.id.toString()}
@@ -192,7 +194,7 @@ export default function SearchScreen() {
       sourceName={item.source_name}
       api={api}
     />
-  );
+  ), []);
 
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);

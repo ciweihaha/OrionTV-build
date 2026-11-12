@@ -280,6 +280,32 @@ export class PlayRecordManager {
     return storageConfig.getStorageType();
   }
 
+  // 读原始 PLAY_RECORDS blob（不经 getAll 合并）：getAll 会把 PlayerSettings
+  // 合并进每条记录，save/remove 若用它读回再写回，标记值就被永久写进 blob，
+  // 清除标记后旧值仍在 blob 里，下次 getAll 又合并回来（标记“复活”）。
+  private static async getRawLocalRecords(): Promise<Record<string, PlayRecord>> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.PLAY_RECORDS);
+      return data ? JSON.parse(data) : {};
+    } catch (error) {
+      logger.info("Failed to get raw local play records:", error);
+      return {};
+    }
+  }
+
+  // 剥离播放器设置字段：历史 blob 可能已被旧 bug 污染（标记值写进了记录），
+  // 写回前统一剥离，既防新污染也逐步清理旧数据
+  private static stripPlayerSettings(records: Record<string, PlayRecord>): void {
+    for (const key in records) {
+      const r = records[key] as Partial<PlayRecord> & Partial<PlayerSettings>;
+      if (r && typeof r === "object") {
+        delete r.introEndTime;
+        delete r.outroStartTime;
+        delete r.playbackRate;
+      }
+    }
+  }
+
   static async getAll(): Promise<Record<string, PlayRecord>> {
     const perfStart = performance.now();
     const storageType = this.getStorageType();
@@ -290,6 +316,9 @@ export class PlayRecordManager {
       try {
         const data = await AsyncStorage.getItem(STORAGE_KEYS.PLAY_RECORDS);
         apiRecords = data ? JSON.parse(data) : {};
+        // 剥离 blob 里可能残留的设置字段（旧 bug 污染）：否则已清除的标记
+        // 会在合并时复活——localSettings 没有该 key 时 spread 删不掉它
+        this.stripPlayerSettings(apiRecords);
       } catch (error) {
         logger.info("Failed to get all local play records:", error);
         return {};
@@ -336,7 +365,8 @@ export class PlayRecordManager {
 
     if (this.getStorageType() === "localstorage") {
       return enqueueLocalWrite(async () => {
-        const allRecords = await this.getAll();
+        // 读原始 blob 而非 getAll（合并版）：否则 PlayerSettings 会被写进记录
+        const allRecords = await this.getRawLocalRecords();
         const fullRecord = { ...apiRecord, save_time: Date.now() };
         allRecords[key] = { ...allRecords[key], ...fullRecord };
         // 超限时按 save_time 淘汰最旧的记录
@@ -347,6 +377,8 @@ export class PlayRecordManager {
             .slice(0, keys.length - MAX_PLAY_RECORDS)
             .forEach((k) => delete allRecords[k]);
         }
+        // 剥离设置字段：历史 blob 可能已被旧 bug 污染，写回前清理
+        this.stripPlayerSettings(allRecords);
         await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
       });
     } else {
@@ -375,8 +407,10 @@ export class PlayRecordManager {
 
     if (this.getStorageType() === "localstorage") {
       return enqueueLocalWrite(async () => {
-        const allRecords = await this.getAll();
+        // 读原始 blob 而非 getAll（合并版），写回前剥离设置字段（同 save）
+        const allRecords = await this.getRawLocalRecords();
         delete allRecords[key];
+        this.stripPlayerSettings(allRecords);
         await AsyncStorage.setItem(STORAGE_KEYS.PLAY_RECORDS, JSON.stringify(allRecords));
       });
     } else {

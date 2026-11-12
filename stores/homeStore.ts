@@ -434,12 +434,18 @@ const useHomeStore = create<HomeState>((set, get) => ({
           if (existingCache && existingCache.data.length < MAX_ITEMS_PER_CACHE) {
             // 真 LRU：Map.set 不改变已有 key 的插入序，先删再设才移到末尾
             dataCache.delete(cacheKey);
+            // aggPage 只在整页完整并入缓存时才推进：data 被 slice(0, 40) 截断
+            // 时若仍记 nextPg，缓存命中后 contentData 只有 40 条、aggPage 已
+            // 是下一页，loadMore 会直接跳过被截掉的那部分。保持旧 aggPage，
+            // 下次 loadMore 重取同一页，去重会滤掉已有的，截掉的补回来。
+            const mergedData = [...existingCache.data, ...newItems];
+            const truncated = mergedData.length > MAX_ITEMS_PER_CACHE;
             dataCache.set(cacheKey, {
               ...existingCache,
-              data: [...existingCache.data, ...newItems].slice(0, MAX_ITEMS_PER_CACHE),
+              data: mergedData.slice(0, MAX_ITEMS_PER_CACHE),
               hasMore: nextHasMore,
               pagecount: result.pagecount,
-              aggPage: nextPg,
+              aggPage: truncated ? existingCache.aggPage : nextPg,
             });
           }
           set((state) => {

@@ -113,10 +113,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         } else {
           // 服务器没返回可用配置（空响应/非法 JSON）：当作拉取失败，
           // 清掉旧配置，别让上一个服务器的 StorageType 继续生效
+          storageConfig.setStorageType(undefined);
           set({ serverConfig: null });
         }
       } catch (error) {
         if (fetchUrl === api.baseURL) {
+          // 拉取失败同样清掉旧 StorageType（换服务器后新配置拉不到时，
+          // 旧服务器的类型会残留，收藏/记录被写到错误的后端）
+          storageConfig.setStorageType(undefined);
           set({ serverConfig: null });
         }
         logger.error("Failed to fetch server config:", error);
