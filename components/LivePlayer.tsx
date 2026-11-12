@@ -7,7 +7,6 @@ import { StyledButton } from "@/components/StyledButton";
 
 interface LivePlayerProps {
   streamUrl: string | null;
-  channelTitle?: string | null;
   onPlaybackStatusUpdate: (status: PlaybackStatus) => void;
   /** V1.5：流加载失败/超时回调（每个 streamUrl 最多触发一次），供上层自动跳台 */
   onPlaybackError?: () => void;
@@ -17,7 +16,7 @@ interface LivePlayerProps {
 
 const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 
-export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onPlaybackError, onRetry }: LivePlayerProps) {
+export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlaybackError, onRetry }: LivePlayerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,7 +135,7 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
   if (!streamUrl) {
     return (
       <View style={styles.container}>
-        <Text style={styles.messageText}>按向下键选择频道</Text>
+        <Text style={styles.messageText}>按 OK 键选择频道</Text>
       </View>
     );
   }
@@ -168,11 +167,6 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
           <Text style={styles.messageText}>加载中...</Text>
         </View>
       )}
-      {channelTitle && !isLoading && !isTimeout && (
-        <View style={styles.overlay}>
-          <Text style={styles.title}>{channelTitle}</Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -187,18 +181,6 @@ const styles = StyleSheet.create({
   video: {
     flex: 1,
     alignSelf: "stretch",
-  },
-  overlay: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    padding: 10,
-    borderRadius: 5,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 18,
   },
   messageText: {
     color: "#fff",

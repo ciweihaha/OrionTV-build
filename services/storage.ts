@@ -4,6 +4,7 @@ import { api, PlayRecord as ApiPlayRecord, Favorite as ApiFavorite } from "./api
 import { storageConfig } from "./storageConfig";
 import { Logger } from '@/utils/Logger';
 import { utf8ByteLength } from '../utils/utf8ByteLength';
+import type { EpgData } from "./epg";
 
 const logger = Logger.withTag('Storage');
 
@@ -16,6 +17,7 @@ const STORAGE_KEYS = {
   SEARCH_HISTORY: "mytv_search_history",
   LOGIN_CREDENTIALS: "mytv_login_credentials",
   M3U_CACHE_PREFIX: "mytv_m3u_cache_",
+  EPG_CACHE_PREFIX: "mytv_epg_cache_",
   LIVE_LAST_CHANNEL: "mytv_live_last_channel",
   LIVE_FAV_CHANNELS: "mytv_live_fav_channels",
 } as const;
@@ -432,7 +434,7 @@ const MAX_M3U_CACHE_BYTES = 3 * 1024 * 1024;
 
 export interface M3uCacheEntry {
   ts: number;
-  channels: { id: string; name: string; url: string; logo: string; group: string }[];
+  channels: { id: string; name: string; url: string; logo: string; group: string; tvgId: string; urls: string[] }[];
 }
 
 export class M3uCacheManager {
@@ -477,6 +479,56 @@ export class M3uCacheManager {
       if (m3uKeys.length > 0) await Promise.all(m3uKeys.map((k) => AsyncStorage.removeItem(k)));
     } catch (error) {
       logger.info("Failed to clear m3u cache:", error);
+    }
+  }
+}
+
+// --- EPG 节目单缓存（直播面板节目单秒显，与 M3U 缓存同款模式） ---
+/** EPG 磁盘缓存有效期（毫秒）：节目单每天凌晨更新，6 小时内直接用缓存 */
+const EPG_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+export interface EpgCacheEntry {
+  ts: number;
+  data: EpgData;
+}
+
+export class EpgCacheManager {
+  static async get(epgUrl: string): Promise<EpgCacheEntry | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.EPG_CACHE_PREFIX + epgUrl);
+      if (!data) return null;
+      if (utf8ByteLength(data) > MAX_M3U_CACHE_BYTES) return null;
+      const entry = JSON.parse(data) as EpgCacheEntry;
+      if (!entry || !entry.data || !entry.data.channels || typeof entry.data.channels !== 'object') return null;
+      if (typeof entry.ts !== 'number' || Date.now() - entry.ts > EPG_CACHE_TTL_MS) return null; // 过期视为未命中
+      return entry;
+    } catch (error) {
+      logger.info('Failed to get epg cache:', error);
+      return null;
+    }
+  }
+
+  static async save(epgUrl: string, data: EpgData): Promise<void> {
+    try {
+      const entry: EpgCacheEntry = { ts: Date.now(), data };
+      const json = JSON.stringify(entry);
+      if (utf8ByteLength(json) > MAX_M3U_CACHE_BYTES) {
+        logger.info(`epg cache skipped (too large): ${utf8ByteLength(json)} bytes`);
+        return;
+      }
+      await AsyncStorage.setItem(STORAGE_KEYS.EPG_CACHE_PREFIX + epgUrl, json);
+    } catch (error) {
+      logger.info('Failed to save epg cache:', error);
+    }
+  }
+
+  static async clear(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const epgKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.EPG_CACHE_PREFIX));
+      if (epgKeys.length > 0) await Promise.all(epgKeys.map((k) => AsyncStorage.removeItem(k)));
+    } catch (error) {
+      logger.info('Failed to clear epg cache:', error);
     }
   }
 }

@@ -10,9 +10,13 @@ export interface Channel {
   url: string;
   logo: string;
   group: string;
+  /** tvg-id：与节目单 XMLTV 的 channel id 是同一套，用于匹配 EPG */
+  tvgId: string;
+  /** 该频道全部线路（同名频道合并而来）；url 恒等于 urls[0] */
+  urls: string[];
 }
 
-const parseM3U = (m3uText: string): Channel[] => {
+export const parseM3U = (m3uText: string): Channel[] => {
   const parsedChannels: Channel[] = [];
   // 同一个流地址在列表里出现多次时只留第一条：重复行会让直播列表出现
   // 完全相同的两个频道（数字换台、收藏比对都按 URL 来，也会跟着错乱）
@@ -48,6 +52,13 @@ const parseM3U = (m3uText: string): Channel[] => {
         if (groupMatch && groupMatch[1]) {
           currentChannelInfo.group = groupMatch[1];
         }
+        // tvg-id 与节目单 channel 的 id 是同一套：名字写法不同时
+        // （直播源“CCTV综合”、节目单“CCTV-1 综合”），节目单按名
+        // 查不到，靠它兜底（与天光云影 M3uIptvParser 同款）
+        const tvgIdMatch = attributesPart.match(/tvg-id="([^"]*)"/i);
+        if (tvgIdMatch && tvgIdMatch[1]) {
+          currentChannelInfo.tvgId = tvgIdMatch[1];
+        }
       } else {
         // 没有分隔逗号：后面那段是时长/属性不是台名，留空走 'Unknown' 兜底
         currentChannelInfo.name = '';
@@ -68,14 +79,53 @@ const parseM3U = (m3uText: string): Channel[] => {
         name: currentChannelInfo.name || 'Unknown',
         logo: currentChannelInfo.logo || '',
         group: currentChannelInfo.group || 'Default',
+        tvgId: currentChannelInfo.tvgId || '',
+        urls: [currentChannelInfo.url],
       };
-      
+
       parsedChannels.push(finalChannel);
       currentChannelInfo = null; // Reset for the next channel
     }
   }
-  return parsedChannels;
+  // 同名频道合并多线路（与天光云影 IptvParser.buildGroupList 同款）：
+  // 同一台名出现多次（不同地址）时只留一条频道，地址并进 urls，
+  // 遥控器左右键在各线路间切换；顺序以首次出现为准
+  return mergeSameNameChannels(parsedChannels);
 };
+
+/** 同名频道合并：地址并进 urls，第一条的台名/分组/tvg-id 为准 */
+function mergeSameNameChannels(channels: Channel[]): Channel[] {
+  const merged: Channel[] = [];
+  const byName = new Map<string, Channel>();
+  for (const ch of channels) {
+    const existing = byName.get(ch.name);
+    if (!existing) {
+      byName.set(ch.name, ch);
+      merged.push(ch);
+      continue;
+    }
+    for (const u of ch.urls) {
+      if (!existing.urls.includes(u)) existing.urls.push(u);
+    }
+    if (!existing.tvgId && ch.tvgId) existing.tvgId = ch.tvgId;
+    if (!existing.logo && ch.logo) existing.logo = ch.logo;
+  }
+  return merged;
+}
+
+/** 旧版磁盘缓存没有 tvgId/urls 字段：读出后补默认值，避免上层读到 undefined */
+export function normalizeChannel(ch: Partial<Channel> & { url: string }): Channel {
+  const url = ch.url;
+  return {
+    id: ch.id ?? url,
+    name: ch.name ?? 'Unknown',
+    url,
+    logo: ch.logo ?? '',
+    group: ch.group ?? 'Default',
+    tvgId: ch.tvgId ?? '',
+    urls: ch.urls && ch.urls.length > 0 ? ch.urls : [url],
+  };
+}
 
 // M3U 拉取超时（毫秒）
 const M3U_FETCH_TIMEOUT_MS = 15_000;
@@ -128,8 +178,10 @@ export const getCachedM3u = async (m3uUrl: string): Promise<Channel[]> => {
   if (mem && mem.length > 0) return mem;
   const disk = await M3uCacheManager.get(m3uUrl);
   if (disk && disk.channels.length > 0) {
-    m3uMemCache.set(m3uUrl, disk.channels);
-    return disk.channels;
+    // 旧版缓存没有 tvgId/urls：归一化后再用，否则上层读到 undefined
+    const channels = disk.channels.map(normalizeChannel);
+    m3uMemCache.set(m3uUrl, channels);
+    return channels;
   }
   return [];
 };
