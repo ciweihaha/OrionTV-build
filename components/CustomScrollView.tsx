@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
 import type { ScrollViewInstance } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -52,9 +53,13 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     };
   }, []);
 
-  // 添加返回键处理逻辑
-  useEffect(() => {
-    if (deviceType === 'tv') {
+  // 返回键处理：只在当前页聚焦时生效。首页经 expo-router Stack 切到详情页
+  // 后仍挂载，普通 useEffect 注册的处理器会继续拦截返回键——首页滚到底
+  // 后在详情页按返回，会触发首页的 scrollToTop 而不是返回（与 app/index.tsx
+  // 的双击退出同一修法）。
+  useFocusEffect(
+    useCallback(() => {
+      if (deviceType !== 'tv') return;
       const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
         if (showScrollToTop) {
           scrollToTop();
@@ -64,8 +69,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       });
 
       return () => backHandler.remove();
-    }
-  }, [showScrollToTop,deviceType]);
+    }, [showScrollToTop, deviceType])
+  );
 
   // 使用响应式列数，如果没有明确指定的话
   const effectiveColumns = numColumns || responsiveConfig.columns;
@@ -188,6 +193,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       padding: responsiveConfig.spacing,
       borderRadius: responsiveConfig.spacing,
       opacity: showScrollToTop ? 1 : 0,
+      // 透明时不拦截触摸：opacity 0 的按钮仍会吃掉点击，遮住下面的卡片
+      pointerEvents: (showScrollToTop ? 'auto' : 'none') as 'auto' | 'none',
     },
   });
 

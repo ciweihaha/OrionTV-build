@@ -173,7 +173,7 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
             <ThemedText numberOfLines={2} style={styles.title}>{title}</ThemedText>
             {isContinueWatching && (
               <ThemedText style={styles.continueLabel} numberOfLines={1}>
-                第{episodeIndex! + 1}集 {Math.round((progress || 0) * 100)}%
+                第{episodeIndex}集 {Math.round((progress || 0) * 100)}%
               </ThemedText>
             )}
           </View>

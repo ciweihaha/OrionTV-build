@@ -185,6 +185,9 @@ export default function DetailScreen() {
           {/* 剧集列表 */}
           <View style={dynamicStyles.episodesContainer}>
             <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
+            {detail.episodes.length === 0 ? (
+              <ThemedText style={dynamicStyles.episodeButtonText}>暂无可播放剧集</ThemedText>
+            ) : (
             <View style={dynamicStyles.episodeList}>
               {detail.episodes.map((episode, index) => (
                 <StyledButton
@@ -196,6 +199,7 @@ export default function DetailScreen() {
                 />
               ))}
             </View>
+            )}
           </View>
         </ScrollView>
       );
@@ -273,6 +277,9 @@ export default function DetailScreen() {
             </View>
             <View style={dynamicStyles.episodesContainer}>
               <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
+              {detail.episodes.length === 0 ? (
+                <ThemedText style={dynamicStyles.episodeButtonText}>暂无可播放剧集</ThemedText>
+              ) : (
               <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
                 {detail.episodes.map((episode, index) => (
                   <StyledButton
@@ -284,6 +291,7 @@ export default function DetailScreen() {
                   />
                 ))}
               </ScrollView>
+              )}
             </View>
           </View>
         </ScrollView>

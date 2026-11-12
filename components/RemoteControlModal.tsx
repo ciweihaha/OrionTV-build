@@ -24,7 +24,8 @@ export const RemoteControlModal: React.FC = () => {
             )}
           </View>
           <ThemedText style={styles.instructions}>
-            使用手机扫描上方二维码，即可在浏览器中向 TV 发送消息。或者访问{serverUrl}
+            使用手机扫描上方二维码，即可在浏览器中向 TV 发送消息。
+            {serverUrl ? `或者访问 ${serverUrl}` : ""}
           </ThemedText>
           {pairingCode && (
             <ThemedText style={styles.pairingCode}>
