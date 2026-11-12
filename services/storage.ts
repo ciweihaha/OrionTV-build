@@ -474,28 +474,37 @@ export class M3uCacheManager {
   }
 
   static async save(m3uUrl: string, channels: M3uCacheEntry["channels"]): Promise<void> {
-    try {
-      const entry: M3uCacheEntry = { ts: Date.now(), channels };
-      const json = JSON.stringify(entry);
-      if (utf8ByteLength(json) > MAX_M3U_CACHE_BYTES) {
-        logger.info(`m3u cache skipped (too large): ${utf8ByteLength(json)} bytes`);
-        return;
+    // 写路径串行（enqueueLocalWrite）：save 与 clear 并发时，clear 可能在
+    // save 写盘后删 key（缓存丢了），或 save 在 clear 后写盘（旧数据复活）
+    return enqueueLocalWrite(async () => {
+      try {
+        const entry: M3uCacheEntry = { ts: Date.now(), channels };
+        const json = JSON.stringify(entry);
+        // utf8ByteLength 只算一次：原来 if 里算一次、日志里又算一次，
+        // 大列表 JSON 是 MB 级，逐字符扫两遍
+        const byteLength = utf8ByteLength(json);
+        if (byteLength > MAX_M3U_CACHE_BYTES) {
+          logger.info(`m3u cache skipped (too large): ${byteLength} bytes`);
+          return;
+        }
+        await AsyncStorage.setItem(STORAGE_KEYS.M3U_CACHE_PREFIX + m3uUrl, json);
+      } catch (error) {
+        logger.info("Failed to save m3u cache:", error);
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.M3U_CACHE_PREFIX + m3uUrl, json);
-    } catch (error) {
-      logger.info("Failed to save m3u cache:", error);
-    }
+    });
   }
 
   static async clear(): Promise<void> {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      const m3uKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.M3U_CACHE_PREFIX));
-      // AsyncStorage 3.x 已移除 multiRemove，改用 removeItem 逐个删除
-      if (m3uKeys.length > 0) await Promise.all(m3uKeys.map((k) => AsyncStorage.removeItem(k)));
-    } catch (error) {
-      logger.info("Failed to clear m3u cache:", error);
-    }
+    return enqueueLocalWrite(async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const m3uKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.M3U_CACHE_PREFIX));
+        // AsyncStorage 3.x 已移除 multiRemove，改用 removeItem 逐个删除
+        if (m3uKeys.length > 0) await Promise.all(m3uKeys.map((k) => AsyncStorage.removeItem(k)));
+      } catch (error) {
+        logger.info("Failed to clear m3u cache:", error);
+      }
+    });
   }
 }
 
@@ -525,27 +534,33 @@ export class EpgCacheManager {
   }
 
   static async save(epgUrl: string, data: EpgData): Promise<void> {
-    try {
-      const entry: EpgCacheEntry = { ts: Date.now(), data };
-      const json = JSON.stringify(entry);
-      if (utf8ByteLength(json) > MAX_M3U_CACHE_BYTES) {
-        logger.info(`epg cache skipped (too large): ${utf8ByteLength(json)} bytes`);
-        return;
+    // 写路径串行（与 M3uCacheManager 同款 save/clear 竞态）
+    return enqueueLocalWrite(async () => {
+      try {
+        const entry: EpgCacheEntry = { ts: Date.now(), data };
+        const json = JSON.stringify(entry);
+        const byteLength = utf8ByteLength(json);
+        if (byteLength > MAX_M3U_CACHE_BYTES) {
+          logger.info(`epg cache skipped (too large): ${byteLength} bytes`);
+          return;
+        }
+        await AsyncStorage.setItem(STORAGE_KEYS.EPG_CACHE_PREFIX + epgUrl, json);
+      } catch (error) {
+        logger.info('Failed to save epg cache:', error);
       }
-      await AsyncStorage.setItem(STORAGE_KEYS.EPG_CACHE_PREFIX + epgUrl, json);
-    } catch (error) {
-      logger.info('Failed to save epg cache:', error);
-    }
+    });
   }
 
   static async clear(): Promise<void> {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      const epgKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.EPG_CACHE_PREFIX));
-      if (epgKeys.length > 0) await Promise.all(epgKeys.map((k) => AsyncStorage.removeItem(k)));
-    } catch (error) {
-      logger.info('Failed to clear epg cache:', error);
-    }
+    return enqueueLocalWrite(async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const epgKeys = keys.filter((k) => k.startsWith(STORAGE_KEYS.EPG_CACHE_PREFIX));
+        if (epgKeys.length > 0) await Promise.all(epgKeys.map((k) => AsyncStorage.removeItem(k)));
+      } catch (error) {
+        logger.info('Failed to clear epg cache:', error);
+      }
+    });
   }
 }
 
