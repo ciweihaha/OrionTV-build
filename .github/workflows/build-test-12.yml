@@ -1,0 +1,79 @@
+name: Build Test 1.2
+
+# 测试版专用构建：只出包，不发版。
+# 1.2 测试版只改版本号（1.2.0），包名保持 com.oriontv 不变：
+# 用户已把电视上的正式版 1.6.8 卸载了，不需要单独包名共存；
+# versionCode 也保持和正式构建一致（不设置），避免以后装正式版时被拦。
+# 不要在这里加 Create Release / 打 tag / 上传 R2 的步骤。
+# 正式发版只走 build-apk.yml（master 分支）。
+
+on:
+  workflow_dispatch:
+
+# 只读权限：本工作流不创建 Release，不需要写权限。
+permissions:
+  contents: read
+
+jobs:
+  test_build:
+    name: Build Android TV Test APK 1.2.0
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: 改成 1.2.0 测试版（只改 runner 内文件，不提交）
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = '1.2.0';
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          app.expo.version = '1.2.0';
+          fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+          console.log('package.json version:', pkg.version);
+          console.log('app.json:', app.expo.name, app.expo.version, app.expo.android.package);
+          EOF
+
+      - name: Get version from package.json
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Setup JDK
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Prebuild TV App
+        run: yarn prebuild
+
+      - name: Build TV APK
+        run: yarn build
+
+      - name: Rename APK file
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/orionTV.1.2.0-test.apk
+
+      - name: Generate SHA256 checksum
+        run: |
+          cd artifacts
+          sha256sum orionTV.1.2.0-test.apk > orionTV.1.2.0-test.apk.sha256
+          cat orionTV.1.2.0-test.apk.sha256
+
+      - name: Upload test APK artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: oriontv-1.2.0-test
+          path: artifacts/
