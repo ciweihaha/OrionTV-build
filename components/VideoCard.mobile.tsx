@@ -67,7 +67,10 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, q: title },
+          // 带上 id：detailStore 的 preferred-source 快路径要求
+          // (preferredSource && id)，不传时卡片入口恒走全量扇出搜索，
+          // 更慢且默认详情不一定是卡片所示的源
+          params: { source, q: title, id },
         });
       }
     };
@@ -90,11 +93,15 @@ const VideoCardMobile = forwardRef<ViewInstance, VideoCardMobileProps>(
         {
           text: "取消",
           style: "cancel",
+          // 与 TV 版同款：点“取消”后立即点卡片，1 秒防误触窗口会把这次
+          // 正常点击吃掉。弹框已关，误触窗口的使命已完成，清掉它。
+          onPress: () => { longPressAt.current = 0; },
         },
         {
           text: "删除",
           style: "destructive",
           onPress: async () => {
+            longPressAt.current = 0;
             try {
               await PlayRecordManager.remove(source, id);
               onRecordDeleted?.();

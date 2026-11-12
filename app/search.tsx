@@ -76,9 +76,15 @@ export default function SearchScreen() {
         if (!term.trim()) {
           Keyboard.dismiss();
           // 空关键词等于没搜：清掉上一轮的结果和报错，别让旧卡片/旧报错
-          // 留在空输入框下面误导人
+          // 留在空输入框下面误导人。先取消在飞的搜索并 bump seq：不取消
+          // 的话旧搜索完成时 seq 守卫放行，旧结果会复活、loading 一直转到它完成。
+          searchAbortController.current?.abort();
+          ++searchSeqRef.current;
           setResults([]);
           setError(null);
+          // seq 已 bump，旧搜索的 finally 不会再关 loading，这里自己关，
+          // 否则空输入框下一直转圈
+          setLoading(false);
           resolve();
           return;
         }

@@ -427,7 +427,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
     };
 
     const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
-    set({ isFavorited: newIsFavorited });
+    // 切源快时旧的 toggle 可能后返回：只给当前仍在显示的详情写（与
+    // setDetail / init 末尾的收藏检查同款身份守卫），否则旧源的收藏
+    // 状态会写到新源上
+    if (get().detail === detail) {
+      set({ isFavorited: newIsFavorited });
+    }
   },
 
   markSourceAsFailed: (source: string, reason: string) => {

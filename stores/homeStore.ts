@@ -418,13 +418,19 @@ const useHomeStore = create<HomeState>((set, get) => ({
             const oldestKey = Array.from(dataCache.keys())[0];
             dataCache.delete(oldestKey);
           }
+          // 首屏截断与追加分支（L2）同款处理：单页返回超 40 条时 data
+          // 被截断，若仍记 aggPage: 1 + hasMore: false，缓存命中后
+          // loadMore 直接取第 2 页，第 41 条之后永久丢失。截断时记
+          // aggPage: 0 + hasMore: true，下次 loadMore 重取第 1 页，
+          // 去重补回截掉的条目（服务端页大小未证实，属防御性修复）。
+          const firstPageTruncated = newItems.length > MAX_ITEMS_PER_CACHE;
           dataCache.set(cacheKey, {
             data: newItems.slice(0, MAX_ITEMS_PER_CACHE),
             timestamp: Date.now(),
             type: selectedCategory.type || 'tv',
-            hasMore: nextHasMore,
+            hasMore: firstPageTruncated ? true : nextHasMore,
             pagecount: result.pagecount,
-            aggPage: 1,
+            aggPage: firstPageTruncated ? 0 : 1,
           });
           set({
             contentData: newItems,
@@ -754,20 +760,21 @@ const useHomeStore = create<HomeState>((set, get) => ({
       return;
     }
     const hasRecords = Object.keys(records).length > 0;
-    set((state) => {
-      const recordCategoryExists = state.categories.some((c) => c.type === "record");
-      if (hasRecords && !recordCategoryExists) {
-        return { categories: [initialCategories[0], ...state.categories] };
+    // updater 应为纯函数（同本函数第一分支）：selectCategory（含嵌套 set 与
+    // 异步加载）不能在 updater 内调；先算新分类，set 之后再切。另去掉
+    // `|| null`（selectCategory 参数类型为 Category，传 null 会在
+    // category.title 上抛 TypeError），分类为空时不切。
+    const { categories, selectedCategory } = get();
+    const recordCategoryExists = categories.some((c) => c.type === "record");
+    if (hasRecords && !recordCategoryExists) {
+      set({ categories: [initialCategories[0], ...categories] });
+    } else if (!hasRecords && recordCategoryExists) {
+      const newCategories = categories.filter((c) => c.type !== "record");
+      set({ categories: newCategories });
+      if (selectedCategory.type === "record" && newCategories.length > 0) {
+        get().selectCategory(newCategories[0]);
       }
-      if (!hasRecords && recordCategoryExists) {
-        const newCategories = state.categories.filter((c) => c.type !== "record");
-        if (state.selectedCategory.type === "record") {
-          get().selectCategory(newCategories[0] || null);
-        }
-        return { categories: newCategories };
-      }
-      return {};
-    });
+    }
 
     get().fetchInitialData().catch((error) => {
       logger.warn("refreshPlayRecords: fetchInitialData failed", error);
