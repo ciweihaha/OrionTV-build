@@ -585,8 +585,16 @@ export class API {
   async getAggCategory(
     t: 1 | 2 | 3 | 4,
     pg: number,
+    // 地区 / 年代筛选（2026-11-12 agg 实测支持 videolist 的 area/year 参数）：
+    // area 是包含匹配（area=香港 同时命中 "香港" 与 "中国香港"），
+    // year 是精确年份匹配（year=201 返回 0 条，年代段无法表达），
+    // 两者可组合；未选的项不拼参数，与无筛选行为一致。
+    // 与版本接口无关：本方法只请求 ac=videolist，不碰 oriontv-version。
+    filters?: { area?: string; year?: string },
   ): Promise<AggCategoryResponse> {
     const parts = [`ac=videolist`, `t=${t}`, `pg=${pg}`];
+    if (filters?.area) parts.push(`area=${encodeURIComponent(filters.area)}`);
+    if (filters?.year) parts.push(`year=${encodeURIComponent(filters.year)}`);
     const url = `${AGG_BASE_URL}?${parts.join("&")}`;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {

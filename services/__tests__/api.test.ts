@@ -339,3 +339,59 @@ describe("API.logout 登录标记清理（第 30 轮）", () => {
     expect(AsyncStorage.setItem).toHaveBeenCalledWith("authCookies", "");
   });
 });
+
+describe("API.getAggCategory 地区 / 年代筛选", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const aggOk = () => makeResponse(200, { code: 1, list: [{ vod_id: "1" }] });
+
+  it("不传 filters 时 URL 与原来一致，不含 area/year 参数", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toBe("https://ysp.ciweihaha.win/agg?ac=videolist&t=1&pg=1");
+  });
+
+  it("传 area 时 URL 带编码后的 area 参数", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1, { area: "中国大陆" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain(`area=${encodeURIComponent("中国大陆")}`);
+    expect(url).not.toContain("year=");
+  });
+
+  it("传 year 时 URL 带 year 参数", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(2, 3, { year: "2024" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("t=2&pg=3&year=2024");
+    expect(url).not.toContain("area=");
+  });
+
+  it("area 与 year 组合时两个参数都有", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1, { area: "美国", year: "2024" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain(`area=${encodeURIComponent("美国")}`);
+    expect(url).toContain("year=2024");
+  });
+
+  it("filters 为空对象时与不传一致", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1, {});
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toBe("https://ysp.ciweihaha.win/agg?ac=videolist&t=1&pg=1");
+  });
+});
