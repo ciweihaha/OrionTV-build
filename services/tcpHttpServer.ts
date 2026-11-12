@@ -6,12 +6,20 @@ import { utf8ByteLength } from '@/utils/utf8ByteLength';
 const logger = Logger.withTag('TCPHttpServer');
 
 const PORT = 12346;
+// 单连接空闲超时（毫秒，L2）：客户端只建连不发完整请求时，30 秒未收全
+// 即关闭连接，防慢速连接占位耗尽。
+const CONNECTION_IDLE_TIMEOUT_MS = 30_000;
+// 并发连接上限（L2）：超限直接拒绝新连接（不进处理流程）。
+const MAX_CONNECTIONS = 10;
 
 interface HttpRequest {
   method: string;
   url: string;
   headers: { [key: string]: string };
   body: string;
+  // 客户端 IP（L3：配对失败锁定按 IP 分离计数；拿不到时为 undefined，
+  // 调用方按 "unknown" 归并处理）
+  remoteAddress?: string;
 }
 
 interface HttpResponse {
@@ -26,12 +34,14 @@ class TCPHttpServer {
   private server: TcpSocket.Server | null = null;
   private isRunning = false;
   private requestHandler: RequestHandler | null = null;
+  // 当前活跃连接（L2：并发上限计数，连接关闭时移除）
+  private activeSockets = new Set<TcpSocket.Socket>();
 
   constructor() {
     this.server = null;
   }
 
-  private parseHttpRequest(data: string): HttpRequest | null {
+  private parseHttpRequest(data: string, remoteAddress?: string): HttpRequest | null {
     try {
       const lines = data.split('\r\n');
       const requestLine = lines[0].split(' ');
@@ -61,7 +71,7 @@ class TCPHttpServer {
 
       const body = bodyStartIndex > 0 ? lines.slice(bodyStartIndex).join('\r\n') : '';
 
-      return { method, url, headers, body };
+      return { method, url, headers, body, remoteAddress };
     } catch (error) {
       logger.error('[TCPHttpServer] Error parsing HTTP request:', error);
       return null;
@@ -75,7 +85,8 @@ class TCPHttpServer {
       403: 'Forbidden',
       404: 'Not Found',
       413: 'Payload Too Large',
-      500: 'Internal Server Error'
+      500: 'Internal Server Error',
+      501: 'Not Implemented'
     };
 
     const statusText = statusTexts[response.statusCode] || 'Unknown';
@@ -141,7 +152,34 @@ class TCPHttpServer {
     return new Promise((resolve, reject) => {
       try {
         this.server = TcpSocket.createServer((socket: TcpSocket.Socket) => {
+          // 并发上限（L2）：超限直接拒绝，不进处理流程、不占计数
+          if (this.activeSockets.size >= MAX_CONNECTIONS) {
+            logger.error('[TCPHttpServer] Connection limit reached, rejecting new connection');
+            this.safeEnd(socket);
+            return;
+          }
+          this.activeSockets.add(socket);
           logger.debug('[TCPHttpServer] Client connected');
+
+          // 单连接空闲超时（L2）：30 秒内没收全请求就关闭，防只建连不发
+          // 完整请求的客户端长期占位。收到数据即重置；连接关闭/响应完成
+          // 后清理，避免定时器泄漏。
+          let idleTimer: ReturnType<typeof setTimeout> | null = null;
+          const clearIdleTimer = () => {
+            if (idleTimer !== null) {
+              clearTimeout(idleTimer);
+              idleTimer = null;
+            }
+          };
+          const armIdleTimer = () => {
+            clearIdleTimer();
+            idleTimer = setTimeout(() => {
+              logger.error('[TCPHttpServer] Connection idle timeout, closing');
+              this.safeEnd(socket);
+            }, CONNECTION_IDLE_TIMEOUT_MS);
+          };
+          armIdleTimer();
+          const remoteAddress = (socket as { remoteAddress?: string }).remoteAddress;
           
           let requestData = '';
           // 请求体上限按 UTF-8 字节算：requestData.length 是 UTF-16 码元数，
@@ -158,8 +196,10 @@ class TCPHttpServer {
               const chunk = data.toString();
               requestData += chunk;
               requestByteLength += utf8ByteLength(chunk);
+              armIdleTimer();
               if (requestByteLength > MAX_REQUEST_BYTES) {
                 logger.error('[TCPHttpServer] Request too large, closing connection');
+                clearIdleTimer();
                 this.safeEnd(socket);
                 requestData = '';
                 requestByteLength = 0;
@@ -172,6 +212,22 @@ class TCPHttpServer {
                 // 分包发送时），没收全就处理会拿到截断的 JSON，远程输入静默失败
                 const headerEndIndex = requestData.indexOf('\r\n\r\n');
                 const headerSection = requestData.slice(0, headerEndIndex);
+                // chunked 编码本服务不支持解析（只认 Content-Length）：直接回
+                // 501，不按 Content-Length 错解析（L2；实现分块解析超出本次范围）
+                const transferEncodingMatch = headerSection.match(/transfer-encoding:\s*([^\r\n]*)/i);
+                if (transferEncodingMatch && transferEncodingMatch[1].toLowerCase().includes('chunked')) {
+                  logger.error('[TCPHttpServer] Chunked transfer encoding not supported, returning 501');
+                  this.safeWrite(socket, this.formatHttpResponse({
+                    statusCode: 501,
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: 'Not Implemented: chunked transfer encoding is not supported'
+                  }));
+                  clearIdleTimer();
+                  this.safeEnd(socket);
+                  requestData = '';
+                  requestByteLength = 0;
+                  return;
+                }
                 const contentLengthMatch = headerSection.match(/content-length:\s*(\d+)/i);
                 const contentLength = contentLengthMatch ? parseInt(contentLengthMatch[1], 10) : 0;
                 const bodySection = requestData.slice(headerEndIndex + 4);
@@ -180,7 +236,7 @@ class TCPHttpServer {
                 }
 
                 try {
-                  const request = this.parseHttpRequest(requestData);
+                  const request = this.parseHttpRequest(requestData, remoteAddress);
                   if (request && this.requestHandler) {
                     const response = await this.requestHandler(request);
                     this.safeWrite(socket, this.formatHttpResponse(response));
@@ -204,11 +260,13 @@ class TCPHttpServer {
                 }
 
                 this.safeEnd(socket);
+                clearIdleTimer();
                 requestData = '';
                 requestByteLength = 0;
               }
             } catch (error) {
               logger.error('[TCPHttpServer] Unexpected error in data handler:', error);
+              clearIdleTimer();
               this.safeEnd(socket);
               requestData = '';
               requestByteLength = 0;
@@ -220,6 +278,8 @@ class TCPHttpServer {
           });
 
           socket.on('close', () => {
+            clearIdleTimer();
+            this.activeSockets.delete(socket);
             logger.debug('[TCPHttpServer] Client disconnected');
           });
         });
@@ -248,6 +308,10 @@ class TCPHttpServer {
       this.server.close();
       this.server = null;
       this.isRunning = false;
+      // 计数只对正在运行的服务实例有效：停掉后清掉，下次启动重新计数
+      //（残留连接的空闲定时器仍会在 30 秒内将其关闭，close 回调里删不存在的
+      // 成员是空操作，无影响）
+      this.activeSockets.clear();
       logger.debug('[TCPHttpServer] Server stopped');
     }
   }

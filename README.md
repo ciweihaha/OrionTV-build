@@ -13,9 +13,9 @@
 
 - **前端**:
   - [React Native TVOS](https://github.com/react-native-tvos/react-native-tvos)
-  - [Expo](https://expo.dev/) (~51.0)
+  - [Expo](https://expo.dev/) (~58.0)
   - [Expo Router](https://docs.expo.dev/router/introduction/)
-  - [Expo AV](https://docs.expo.dev/versions/latest/sdk/av/)
+  - [expo-video](https://docs.expo.dev/versions/latest/sdk/video/)
   - TypeScript
 
 ## 📂 项目结构

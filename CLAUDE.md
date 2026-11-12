@@ -70,12 +70,12 @@ Sophisticated TV interaction handling:
 
 ## Key Technologies
 
-- **React Native TVOS (0.74.x)** - TV-optimized React Native with TV-specific event handling
-- **Expo SDK 51** - Development platform providing native capabilities and build tooling
+- **React Native TVOS (0.88.1)** - TV-optimized React Native with TV-specific event handling
+- **Expo SDK 58** - Development platform providing native capabilities and build tooling
 - **TypeScript** - Complete type safety with `@/*` path mapping configuration
 - **Zustand** - Lightweight state management for global application state
 - **Expo Router** - File-based routing system with typed routes
-- **Expo AV** - Video playback with TV-optimized controls
+- **expo-video** - Video playback with TV-optimized controls (migrated from expo-av)
 
 ## Development Workflow
 

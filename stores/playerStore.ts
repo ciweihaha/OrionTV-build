@@ -247,13 +247,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const storageStart = performance.now();
       logger.info(`[PERF] Storage operations START`);
       
+      // 一次读全后复用：PlayRecordManager.get 内部经 getAll 已把本地播放器
+      // 设置合并进记录（含 playbackRate），不再单独调 PlayerSettingsManager.get
+      // 把播放器设置重读一遍（L18a）
       const playRecord = await PlayRecordManager.get(validDetail.source, validDetail.id.toString());
-      const storagePlayRecordEnd = performance.now();
-      logger.info(`[PERF] PlayRecordManager.get took ${(storagePlayRecordEnd - storageStart).toFixed(2)}ms`);
-      
-      const playerSettings = await PlayerSettingsManager.get(validDetail.source, validDetail.id.toString());
       const storageEnd = performance.now();
-      logger.info(`[PERF] PlayerSettingsManager.get took ${(storageEnd - storagePlayRecordEnd).toFixed(2)}ms`);
+      logger.info(`[PERF] PlayRecordManager.get took ${(storageEnd - storageStart).toFixed(2)}ms`);
       logger.info(`[PERF] Total storage operations took ${(storageEnd - storageStart).toFixed(2)}ms`);
       // 存储读完才发现已被更新的 loadVideo 超过：不写回旧数据
       if (seq !== loadVideoSeq) {
@@ -262,7 +261,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       }
       
       const initialPositionFromRecord = playRecord?.play_time ? playRecord.play_time * 1000 : 0;
-      const savedPlaybackRate = playerSettings?.playbackRate || 1.0;
+      // playbackRate 不在 PlayRecord 类型里，但 getAll 合并时把它随本地设置
+      // 一并 spread 进了记录，值与原来单独读 PlayerSettingsManager.get 相同
+      const savedPlaybackRate = (playRecord as (PlayRecord & { playbackRate?: number }) | null)?.playbackRate || 1.0;
       
       const episodesMappingStart = performance.now();
       const mappedEpisodes = episodes.map((ep, index) => ({
@@ -278,8 +279,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         initialPosition: position || initialPositionFromRecord,
         playbackRate: savedPlaybackRate,
         episodes: mappedEpisodes,
-        introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
-        outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
+        // 合并后的记录已包含本地设置的片头/片尾时间，与原来 playerSettings 的值相同
+        introEndTime: playRecord?.introEndTime,
+        outroStartTime: playRecord?.outroStartTime,
         introSkipped: false,
         nextEpisodeDismissed: false,
         showNextEpisodeOverlay: false,
@@ -454,6 +456,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         year: detail.year || "",
         ...existingRecord,
         ...updates,
+      }).catch((error) => {
+        // fire-and-forget：API 路径保存失败时只记日志不抛回调用方，
+        // 否则 rejected promise 无人处理（L7）
+        logger.debug("Failed to save play record", error);
       });
     }
   },

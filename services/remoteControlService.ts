@@ -7,6 +7,23 @@ const logger = Logger.withTag('RemoteControl');
 // 配对码有效期：服务器每次启动时重新生成
 const PAIRING_CODE_LENGTH = 4;
 
+/**
+ * 恒定时间字符串比较（L3）：RN 里没有 crypto.timingSafeEqual，不引新依赖，
+ * 手写按位比较。固定遍历 max(len) 全长、不提前返回；长度不同时也先按固定
+ * 长度比较完再返回 false（长度差混入 diff），避免长度本身泄露比较进度。
+ * 注意：JS 引擎优化无法保证严格恒定时间，但配对码只有 4 位数字、且有按 IP
+ * 失败锁定兜底，此处防御已足够。
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) {
+    // charCodeAt 越界返回 NaN，`|| 0` 归一为 0，保证两边始终按同一长度比较
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
 const getRemotePageHTML = () => {
   return `
   <!DOCTYPE html>
@@ -109,11 +126,13 @@ class RemoteControlService {
   private onHandshake: () => void = () => {};
   // 配对码：每次启动服务器时重新生成，防止局域网未授权访问
   private pairingCode: string = "";
-  /** 防暴力破解：连续失败 5 次后锁定 60 秒 */
+  /** 防暴力破解：同一 IP 连续失败 5 次后锁定该 IP 60 秒（L3：按客户端 IP
+   * 分离计数——原先是全局计数，攻击者故意输错 5 次就能锁住合法用户） */
   private static readonly MAX_PAIRING_ATTEMPTS = 5;
   private static readonly PAIRING_LOCKOUT_MS = 60_000;
-  private failedPairingAttempts = 0;
-  private pairingLockoutUntil = 0;
+  // 跟踪的 IP 条目上限：超过时清理已过期锁定的条目，防扫描导致 Map 无限增长
+  private static readonly MAX_TRACKED_IPS = 100;
+  private pairingAttemptsByIp = new Map<string, { failures: number; lockoutUntil: number }>();
 
   constructor() {
     this.httpServer = new TCPHttpServer();
@@ -142,23 +161,48 @@ class RemoteControlService {
     return this.pairingCode;
   }
 
-  private isPairingValid(request: { headers?: Record<string, string> }): boolean {
-    // 锁定期内直接拒绝，不做比较（防计时/枚举）
-    if (Date.now() < this.pairingLockoutUntil) {
-      return false;
+  private isPairingValid(request: { headers?: Record<string, string>; remoteAddress?: string }): boolean {
+    // 按客户端 IP 分离计数：拿不到 IP 时归并到 "unknown"（正常情况下 TCP 层
+    // 总能拿到对端地址，见 tcpHttpServer 的 remoteAddress）
+    const clientIp = request.remoteAddress || "unknown";
+    const now = Date.now();
+    let state = this.pairingAttemptsByIp.get(clientIp);
+    if (state) {
+      // 锁定期内直接拒绝，不做比较（防计时/枚举）
+      if (now < state.lockoutUntil) {
+        return false;
+      }
+      // 锁定已过期且无待计失败：条目已无用，删掉防 Map 无限增长
+      if (state.failures === 0) {
+        this.pairingAttemptsByIp.delete(clientIp);
+        state = undefined;
+      }
     }
     const headers = request.headers || {};
     // 头部名做大小写不敏感匹配
     const code = headers["x-pairing-code"] || headers["X-Pairing-Code"] || "";
-    const valid = code === this.pairingCode && this.pairingCode !== "";
+    // 恒定时间比较（L3）：配对码为空（服务未启动）时直接判无效，不比较
+    const valid = this.pairingCode !== "" && timingSafeEqual(code, this.pairingCode);
     if (valid) {
-      this.failedPairingAttempts = 0;
+      this.pairingAttemptsByIp.delete(clientIp);
     } else {
-      this.failedPairingAttempts += 1;
-      if (this.failedPairingAttempts >= RemoteControlService.MAX_PAIRING_ATTEMPTS) {
-        this.pairingLockoutUntil = Date.now() + RemoteControlService.PAIRING_LOCKOUT_MS;
-        this.failedPairingAttempts = 0;
-        logger.info("[RemoteControl] Pairing locked out for 60s after repeated failures");
+      const failures = (state?.failures ?? 0) + 1;
+      if (failures >= RemoteControlService.MAX_PAIRING_ATTEMPTS) {
+        this.pairingAttemptsByIp.set(clientIp, {
+          failures: 0,
+          lockoutUntil: now + RemoteControlService.PAIRING_LOCKOUT_MS,
+        });
+        logger.info(`[RemoteControl] Pairing locked out for ${clientIp} for 60s after repeated failures`);
+      } else {
+        this.pairingAttemptsByIp.set(clientIp, { failures, lockoutUntil: 0 });
+      }
+      // 偶发清理：IP 条目过多时清掉已过期锁定的，避免扫描导致 Map 无限增长
+      if (this.pairingAttemptsByIp.size > RemoteControlService.MAX_TRACKED_IPS) {
+        for (const [ip, s] of this.pairingAttemptsByIp) {
+          if (s.failures === 0 && now >= s.lockoutUntil) {
+            this.pairingAttemptsByIp.delete(ip);
+          }
+        }
       }
     }
     return valid;
@@ -257,8 +301,7 @@ class RemoteControlService {
     try {
       // 每次启动生成新的配对码
       this.pairingCode = this.generatePairingCode();
-      this.failedPairingAttempts = 0;
-      this.pairingLockoutUntil = 0;
+      this.pairingAttemptsByIp.clear();
       logger.debug(`[RemoteControl] Pairing code generated`);
       const url = await this.httpServer.start();
       logger.debug(`[RemoteControl] Server started successfully at: ${url}`);

@@ -559,7 +559,20 @@ export class SettingsManager {
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return data ? { ...defaultSettings, ...JSON.parse(data) } : defaultSettings;
+      if (!data) return defaultSettings;
+      const parsed = JSON.parse(data);
+      const merged: AppSettings = { ...defaultSettings, ...(parsed && typeof parsed === "object" ? parsed : {}) };
+      // videoSource 深合并：已存的部分 videoSource（如旧版本缺 sources）不能
+      // 整体覆盖默认值，否则 detailStore 访问 videoSource.sources[r.key] 抛 TypeError
+      const savedVideoSource = (parsed as Partial<AppSettings>)?.videoSource;
+      merged.videoSource = {
+        ...defaultSettings.videoSource,
+        ...(savedVideoSource && typeof savedVideoSource === "object" ? savedVideoSource : {}),
+      };
+      if (!merged.videoSource.sources || typeof merged.videoSource.sources !== "object" || Array.isArray(merged.videoSource.sources)) {
+        merged.videoSource.sources = {};
+      }
+      return merged;
     } catch (error) {
       logger.info("Failed to get settings:", error);
       return defaultSettings;

@@ -1,6 +1,6 @@
 import { Logger } from '@/utils/Logger';
-import { utf8ByteLength } from '../utils/utf8ByteLength';
 import { M3uCacheManager } from './storage';
+import { readTextWithLimit } from './httpBody';
 
 const logger = Logger.withTag('M3U');
 
@@ -90,8 +90,10 @@ export const fetchAndParseM3u = async (m3uUrl: string): Promise<Channel[]> => {
     if (!response.ok) {
       throw new Error(`Failed to fetch M3U: ${response.statusText}`);
     }
-    // 流式读取并限制体积：防超大列表占满内存（R13）
-    const m3uText = await readTextWithLimit(response, MAX_M3U_BYTES);
+    // 流式读取并限制体积：防超大列表占满内存（R13）。体读取用共享工具的
+    // 独立超时 race（M6）：RN 下 response.text() 无法被 fetch 的 AbortSignal
+    // 中断，只靠上面的定时器，慢速滴流的服务端能让调用挂起远超 15 秒。
+    const m3uText = await readTextWithLimit(response, MAX_M3U_BYTES, M3U_FETCH_TIMEOUT_MS, controller.signal);
     if (m3uText === null) {
       logger.info(`M3U playlist exceeded ${MAX_M3U_BYTES} bytes, rejected: ${m3uUrl.substring(0, 80)}`);
       return [];
@@ -144,43 +146,3 @@ export const refreshM3u = async (m3uUrl: string): Promise<Channel[]> => {
   return channels;
 };
 
-/**
- * 流式读取响应体文本，超限返回 null（R13）
- * OTV-3：与 api.ts 的 readJsonLimited 同步——无流分支不再用 text.length
- * （UTF-16 码元数）判断，改用共享工具 utf8ByteLength 按 UTF-8 字节判断；
- * 并移植 Content-Length 预检，诚实偏大的声明在读体前即返回 null。
- * 超限后返回空列表（fail-closed，见 fetchAndParseM3u）保持不变。
- * 注意：个别超大中文列表会由“放行”变“拒绝并返回空列表”，属预期收紧。
- */
-const readTextWithLimit = async (response: Response, maxBytes: number): Promise<string | null> => {
-  // Content-Length 预检：与 api.ts 的 early reject 一致，缺失或谎报的声明
-  // 仍由后续字节校验兜底。
-  const declared = Number(response.headers?.get?.('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    return null;
-  }
-  const reader = response.body?.getReader();
-  if (!reader) {
-    const text = await response.text();
-    return utf8ByteLength(text) <= maxBytes ? text : null;
-  }
-  const decoder = new TextDecoder();
-  let totalBytes = 0;
-  let result = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel();
-        return null;
-      }
-      result += decoder.decode(value, { stream: true });
-    }
-    result += decoder.decode();
-    return result;
-  } finally {
-    reader.releaseLock();
-  }
-};

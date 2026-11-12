@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { api } from '@/services/api';
 
 export interface ApiConfigStatus {
   isConfigured: boolean;
@@ -25,7 +24,12 @@ export const useApiConfig = () => {
   const isConfigured = Boolean(apiBaseUrl && apiBaseUrl.trim());
   const needsConfiguration = !isConfigured;
 
-  // Validate API configuration when it changes
+  // 未配置时直接重置校验状态。L18d：不再像原来那样单独调一次
+  // api.getServerConfig()——那与 store 的 fetchServerConfig 是两次并行重复请求。
+  // store 的拉取已在 loadSettings / saveSettings / checkLoginStatus 里触发
+  // （checkLoginStatus 无配置时还会主动拉取并重试），且 fetchServerConfig 内部
+  // 有同地址单飞去重；本 hook 只订阅 store 的 serverConfig /
+  // isLoadingServerConfig（见下面两个 effect），不再自己发请求。
   useEffect(() => {
     if (!isConfigured) {
       setValidationState({
@@ -33,77 +37,8 @@ export const useApiConfig = () => {
         isValid: false,
         error: null,
       });
-      return;
     }
-
-    // 校验序号：apiBaseUrl 连续变化时会起多个并行的 getServerConfig，
-    // 慢的旧请求不能覆盖新请求的校验结果；组件卸载/依赖变化时丢弃旧结果
-    let cancelled = false;
-    const validateConfig = async () => {
-      setValidationState(prev => ({ ...prev, isValidating: true, error: null }));
-
-      try {
-        await api.getServerConfig();
-        if (cancelled) return;
-        setValidationState({
-          isValidating: false,
-          isValid: true,
-          error: null,
-        });
-      } catch (error) {
-        if (cancelled) return;
-        // 直接校验与 store 的 fetchServerConfig 是两次并行请求：这次失败时
-        // store 那次可能已经成功（serverConfig 已有值），说明服务器可达，
-        // 只是本次请求瞬时失败——别把有效说成无效，等 effect 3 按
-        // serverConfig 纠正；store 也没拿到配置时才按本次的错误报
-        if (useSettingsStore.getState().serverConfig) {
-          setValidationState({
-            isValidating: false,
-            isValid: true,
-            error: null,
-          });
-          return;
-        }
-        let errorMessage = '服务器连接失败';
-
-        if (error instanceof Error) {
-          switch (error.message) {
-            case 'API_URL_NOT_SET':
-              errorMessage = 'API地址未设置';
-              break;
-            case 'UNAUTHORIZED':
-              errorMessage = '服务器认证失败';
-              break;
-            default:
-              if (error.message.includes('Network')) {
-                errorMessage = '网络连接失败，请检查网络或服务器地址';
-              } else if (error.message.includes('timeout')) {
-                errorMessage = '连接超时，请检查服务器地址';
-              } else if (error.message.includes('404')) {
-                errorMessage = '服务器地址无效，请检查API路径';
-              } else if (error.message.includes('500')) {
-                errorMessage = '服务器内部错误';
-              }
-              break;
-          }
-        }
-
-        setValidationState({
-          isValidating: false,
-          isValid: false,
-          error: errorMessage,
-        });
-      }
-    };
-
-    // Only validate if not already loading server config
-    if (!isLoadingServerConfig) {
-      validateConfig();
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBaseUrl, isConfigured, isLoadingServerConfig]);
+  }, [isConfigured]);
 
   // Reset validation when server config loading state changes
   useEffect(() => {
@@ -118,10 +53,13 @@ export const useApiConfig = () => {
       if (serverConfig) {
         setValidationState(prev => ({ ...prev, isValid: true, error: null }));
       } else {
+        // store 未拿到配置：原先直接请求能区分的细分错误（Network/timeout/
+        // 404/500 等）随直接请求一并取消——store 不暴露失败原因，统一报通用
+        // 错误；具体失败原因由 store 的 fetchServerConfig 记在日志里
         setValidationState(prev => ({
           ...prev,
           isValid: false,
-          error: prev.error || '无法获取服务器配置'
+          error: '无法获取服务器配置'
         }));
       }
     }

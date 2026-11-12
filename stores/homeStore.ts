@@ -5,6 +5,9 @@ import { buildAggFilterParams } from "@/utils/categoryFilters";
 import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
+import { Logger } from "@/utils/Logger";
+
+const logger = Logger.withTag('HomeStore');
 
 export type RowItem = (SearchResult | PlayRecord) & {
   id: string;
@@ -303,6 +306,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
           const fallbackTag = getCmsFallbackTag(cat);
           const doubanResult = await api.getDoubanData(fallbackType, fallbackTag, 20, 0);
           if (isStale()) return;
+          // 与 getAggCategory 一致：先校验 list 是数组，异常结构抛有意义的错误（L9）
+          if (!Array.isArray(doubanResult?.list)) {
+            throw new Error("DOUBAN_INVALID_RESPONSE");
+          }
           const doubanItems = doubanResult.list.map((item) => ({
             ...item,
             id: item.title,
@@ -412,6 +419,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
         );
         if (isStale()) return;
 
+        // 与 getAggCategory 一致：先校验 list 是数组，异常结构抛有意义的错误（L9）
+        if (!Array.isArray(result?.list)) {
+          throw new Error("DOUBAN_INVALID_RESPONSE");
+        }
+
         const newItems = result.list.map((item) => ({
           ...item,
           id: item.title,
@@ -497,23 +509,28 @@ const useHomeStore = create<HomeState>((set, get) => ({
     } catch (err: any) {
       // 分类已变：旧请求的错误不写给新分类
       if (isStale()) return;
+      // 归一化：抛出的不一定是 Error（如字符串），直接读 err.message.includes
+      // 会在 catch 块内再抛 TypeError；非 Error 一律按空消息处理，走默认文案
+      const msg = err instanceof Error ? err.message : "";
       let errorMessage = "加载失败，请重试";
 
-      if (err.message === "API_URL_NOT_SET") {
+      if (msg === "API_URL_NOT_SET") {
         errorMessage = "请点击右上角设置按钮，配置您的服务器地址";
-      } else if (err.message === "UNAUTHORIZED") {
+      } else if (msg === "UNAUTHORIZED") {
         // 会话超时：API 层已尝试自动重登并重试，仍失败说明重登也没成功，
         // 此时才提示用户重新登录（登录框由 restoreSession 弹出）。
         errorMessage = "认证失败，请重新登录";
-      } else if (err.message.includes("Network")) {
+      } else if (msg === "DOUBAN_INVALID_RESPONSE") {
+        errorMessage = "数据格式异常，请稍后重试";
+      } else if (msg.includes("Network")) {
         errorMessage = "网络连接失败，请检查网络连接";
-      } else if (err.message.includes("timeout")) {
+      } else if (msg.includes("timeout")) {
         errorMessage = "请求超时，请检查网络或服务器状态";
-      } else if (err.message.includes("404")) {
+      } else if (msg.includes("404")) {
         errorMessage = "服务器API路径不正确，请检查服务器配置";
-      } else if (err.message.includes("500")) {
+      } else if (msg.includes("500")) {
         errorMessage = "服务器内部错误，请联系管理员";
-      } else if (err.message.includes("403")) {
+      } else if (msg.includes("403")) {
         errorMessage = "访问被拒绝，请检查权限设置";
       }
 
@@ -560,7 +577,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
       });
 
       if (category.type === 'record') {
-        get().fetchInitialData();
+        get().fetchInitialData().catch((error) => {
+          logger.warn("selectCategory: fetchInitialData failed", error);
+        });
         return;
       }
 
@@ -579,7 +598,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
         if (cachedData) {
           dataCache.delete(cacheKey);
         }
-        get().fetchInitialData();
+        get().fetchInitialData().catch((error) => {
+          logger.warn("selectCategory: fetchInitialData failed", error);
+        });
       }
     }
   },
@@ -641,7 +662,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
       return {};
     });
 
-    get().fetchInitialData();
+    get().fetchInitialData().catch((error) => {
+      logger.warn("refreshPlayRecords: fetchInitialData failed", error);
+    });
   },
 
   clearError: () => {

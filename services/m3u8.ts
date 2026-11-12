@@ -1,5 +1,5 @@
 import { Logger } from '@/utils/Logger';
-import { utf8ByteLength } from '@/utils/utf8ByteLength';
+import { readTextWithLimit } from './httpBody';
 
 const logger = Logger.withTag('M3U8');
 
@@ -86,8 +86,12 @@ export const getResolutionFromM3U8 = async (
     }
 
     const parseStart = performance.now();
-    // 流式读取并限制体积：防恶意服务端返回超大播放列表占满内存（R13）
-    const playlist = await readTextWithLimit(response, MAX_PLAYLIST_BYTES);
+    // 流式读取并限制体积：防恶意服务端返回超大播放列表占满内存（R13）。
+    // 体读取用共享工具的独立超时 race（M6）：RN 下 response.text() 无法被
+    // fetch 的 AbortSignal 中断，只靠上面的定时器，慢速滴流的服务端能让
+    // 调用挂起远超 10 秒；共享工具同时补上了 Content-Length 预检（本文件
+    // 原先缺失，m3u.ts 与 api.ts 都有）。
+    const playlist = await readTextWithLimit(response, MAX_PLAYLIST_BYTES, DEFAULT_TIMEOUT_MS, linked.signal);
     if (playlist === null) {
       logger.info(`[PERF] M3U8 playlist exceeded ${MAX_PLAYLIST_BYTES} bytes, rejected`);
       cacheResult(null);
@@ -134,34 +138,3 @@ export const getResolutionFromM3U8 = async (
   }
 };
 
-/**
- * 流式读取响应体文本，超限返回 null（R13）
- */
-const readTextWithLimit = async (response: Response, maxBytes: number): Promise<string | null> => {
-  const reader = response.body?.getReader();
-  if (!reader) {
-    // 无 body 流时回退：按 UTF-8 字节判断（text.length 是 UTF-16 码元数，
-    // 中文会低估约 3 倍；与 api.ts / m3u.ts 的 OTV-3 保持一致）
-    const text = await response.text();
-    return utf8ByteLength(text) <= maxBytes ? text : null;
-  }
-  const decoder = new TextDecoder();
-  let totalBytes = 0;
-  let result = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel();
-        return null;
-      }
-      result += decoder.decode(value, { stream: true });
-    }
-    result += decoder.decode();
-    return result;
-  } finally {
-    reader.releaseLock();
-  }
-};
