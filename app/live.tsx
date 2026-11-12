@@ -86,7 +86,7 @@ interface ChannelCardProps {
   styles: ReturnType<typeof createResponsiveStyles>;
   onSelect: (channel: Channel) => void;
   onToggleFav: (channel: Channel) => void;
-  onFocusCard: (channel: Channel) => void;
+  onFocusCard: (channel: Channel, isFavRow: boolean) => void;
 }
 
 // 频道卡片（memo，模块级）：面板每次焦点移动都重渲染，旧版 renderChannelCard
@@ -108,7 +108,7 @@ const ChannelCard = React.memo(function ChannelCard({
     <TouchableOpacity
       onPress={() => onSelect(item)}
       onLongPress={() => onToggleFav(item)}
-      onFocus={() => onFocusCard(item)}
+      onFocus={() => onFocusCard(item, isFavRow)}
       // 当前台同时在收藏行和所属分组行出现：首选焦点只给所属分组那张卡，
       // 否则两张卡都抢焦点，落点不确定
       hasTVPreferredFocus={isCurrent && !isFavRow}
@@ -179,6 +179,9 @@ export default function LiveScreen() {
   const [epgDialogChannel, setEpgDialogChannel] = useState<Channel | null>(null);
   /** 面板里最后聚焦的频道（菜单键打开它的节目单） */
   const [focusedChannel, setFocusedChannel] = useState<Channel | null>(null);
+  // 焦点所在行：同一频道同时在收藏行和分组行出现时，只高亮真正获焦的那张卡
+  //（只凭 channel id 判 isFocused，两张卡会同时高亮）
+  const [focusedIsFavRow, setFocusedIsFavRow] = useState(false);
   /** 换台信息条（频道信息或提示消息），null = 隐藏 */
   const [tempBar, setTempBar] = useState<TempBarState | null>(null);
   /** 当前时间戳（30 秒一跳）：驱动右上角时钟与节目进度条刷新 */
@@ -724,9 +727,11 @@ export default function LiveScreen() {
   // ---------- 渲染：频道卡片（台名 + 正在播的节目 + 进度条） ----------
 
   // 卡片获焦回调：稳定引用，ChannelCard memo 的 prop 之一（内联箭头会
-  // 让 memo 每渲染都失效）
-  const handleFocusCard = useCallback((ch: Channel) => {
+  // 让 memo 每渲染都失效）。同时记下焦点所在行（收藏行/分组行），供
+  // isFocused 判定——同一频道在两行都出现时只高亮获焦的那张卡。
+  const handleFocusCard = useCallback((ch: Channel, isFavRow: boolean) => {
     setFocusedChannel(ch);
+    setFocusedIsFavRow(isFavRow);
     pokePanelTimer();
   }, [pokePanelTimer]);
 
@@ -740,7 +745,7 @@ export default function LiveScreen() {
         item={item}
         isFavRow={isFavRow}
         isCurrent={currentChannel?.id === item.id}
-        isFocused={focusedChannel?.id === item.id}
+        isFocused={focusedChannel?.id === item.id && focusedIsFavRow === isFavRow}
         isFav={favUrlSet.has(item.url)}
         now={epgNowById[item.id]}
         styles={dynamicStyles}
@@ -749,7 +754,7 @@ export default function LiveScreen() {
         onFocusCard={handleFocusCard}
       />
     );
-  }, [currentChannel, focusedChannel, favUrlSet, epgNowById, dynamicStyles, handleSelectChannel, toggleFavChannelItem, handleFocusCard]);
+  }, [currentChannel, focusedChannel, focusedIsFavRow, favUrlSet, epgNowById, dynamicStyles, handleSelectChannel, toggleFavChannelItem, handleFocusCard]);
 
   // ---------- 渲染：频道面板（天光云影新面板同款） ----------
   // 全屏半透明遮罩；右上角台号 + 日期时间；底部当前频道信息 +
@@ -846,7 +851,7 @@ export default function LiveScreen() {
           ) : (
             <FlatList
               data={programmes}
-              keyExtractor={(item) => `${item.startAt}`}
+              keyExtractor={(item, index) => `${item.startAt}-${index}`}
               initialScrollIndex={currentProgIndex > 0 ? currentProgIndex : 0}
               initialNumToRender={50}
               getItemLayout={(_data, index) => ({ length: 44, offset: 44 * index, index })}

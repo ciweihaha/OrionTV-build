@@ -191,7 +191,7 @@ export default function DetailScreen() {
             <View style={dynamicStyles.episodeList}>
               {detail.episodes.map((episode, index) => (
                 <StyledButton
-                  key={`${detail.source}-${episode}`}
+                  key={`${detail.source}-${index}-${episode}`}
                   style={dynamicStyles.episodeButton}
                   onPress={() => handlePlay(index)}
                   text={`第 ${index + 1} 集`}
@@ -283,7 +283,7 @@ export default function DetailScreen() {
               <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
                 {detail.episodes.map((episode, index) => (
                   <StyledButton
-                    key={`${detail.source}-${episode}`}
+                    key={`${detail.source}-${index}-${episode}`}
                     style={dynamicStyles.episodeButton}
                     onPress={() => handlePlay(index)}
                     text={`第 ${index + 1} 集`}

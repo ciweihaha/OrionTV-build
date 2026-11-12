@@ -152,7 +152,7 @@ class LoggerClass {
 
     if (sharedMinLevel > LogLevel.DEBUG) return;
 
-    if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
+    if (optionsOrMessage !== null && typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
       this.formatMessage('DEBUG', options.tag, message, ...args);
     } else {
@@ -170,7 +170,7 @@ class LoggerClass {
 
     if (sharedMinLevel > LogLevel.INFO) return;
 
-    if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
+    if (optionsOrMessage !== null && typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
       this.formatMessage('INFO', options.tag, message, ...args);
     } else {
@@ -218,7 +218,7 @@ class LoggerClass {
 
     if (sharedMinLevel > LogLevel.WARN) return;
 
-    if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
+    if (optionsOrMessage !== null && typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
       this.formatMessage('WARN', options.tag, message, ...args);
     } else {
@@ -241,7 +241,7 @@ class LoggerClass {
 
     if (sharedMinLevel > LogLevel.ERROR) return;
 
-    if (typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
+    if (optionsOrMessage !== null && typeof optionsOrMessage === 'object' && optionsOrMessage.tag !== undefined) {
       const options = optionsOrMessage as LoggerOptions;
       this.formatMessage('ERROR', options.tag, message, ...args);
     } else {

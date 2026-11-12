@@ -78,9 +78,12 @@ function check() {
       `app.json version is ${JSON.stringify(app.expo.version)}, package.json says ${JSON.stringify(expected.version)}`
     );
   }
-  if (app.expo.android.versionCode !== expected.versionCode) {
+  // android 键缺失时报“版本漂移”而非 TypeError：直接访问 .android.versionCode
+  // 会抛晦涩的 Cannot read properties of undefined
+  const actualVersionCode = app.expo.android?.versionCode;
+  if (actualVersionCode !== expected.versionCode) {
     problems.push(
-      `app.json android.versionCode is ${JSON.stringify(app.expo.android.versionCode)}, expected ${expected.versionCode} (from ${expected.version})`
+      `app.json android.versionCode is ${JSON.stringify(actualVersionCode)}, expected ${expected.versionCode} (from ${expected.version})`
     );
   }
   if (problems.length > 0) {
@@ -100,6 +103,8 @@ function sync() {
   const app = readJson(APP_JSON);
   const expected = expectedAppJson(pkg);
   app.expo.version = expected.version;
+  // android 键缺失时补建（否则直接赋值抛 TypeError）
+  if (!app.expo.android) app.expo.android = {};
   app.expo.android.versionCode = expected.versionCode;
   fs.writeFileSync(APP_JSON, `${JSON.stringify(app, null, 2)}\n`);
   console.log(

@@ -534,6 +534,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
               const updatedData = [...existingCache.data, ...newItems];
               const limitedCacheData = updatedData.slice(0, MAX_ITEMS_PER_CACHE);
 
+              // 真 LRU：Map.set 不改变已有 key 的插入序，先删再设才移到末尾
+              dataCache.delete(cacheKey);
               dataCache.set(cacheKey, {
                 ...existingCache,
                 data: limitedCacheData,
@@ -655,6 +657,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
       const cachedData = dataCache.get(cacheKey);
       if (cachedData && isValidCache(cachedData)) {
+        // 真 LRU：命中时把条目移到末尾（第 10 轮只修了 fetchInitialData，
+        // selectCategory 是切分类的主路径，漏了就等于没修）
+        dataCache.delete(cacheKey);
+        dataCache.set(cacheKey, cachedData);
         set({
           contentData: cachedData.data,
           pageStart: cachedData.data.length,

@@ -312,9 +312,14 @@ class TCPHttpServer {
 
         this.server.on('error', (error: Error) => {
           logger.error('[TCPHttpServer] Server error:', error);
-          this.isRunning = false;
-          this.startingPromise = null;
-          reject(error);
+          // 只在启动阶段才清状态并 reject：listen 成功后触发的 error
+          // （如 EMFILE）服务仍在监听，置 isRunning=false 会让 stop() 失效、
+          // 下次 start() 报 EADDRINUSE
+          if (!this.isRunning) {
+            this.isRunning = false;
+            this.startingPromise = null;
+            reject(error);
+          }
         });
 
       } catch (error) {
@@ -327,6 +332,15 @@ class TCPHttpServer {
   }
 
   public stop() {
+    // 启动中调用 stop：不能是空操作——否则 listen 回调随后仍把服务拉起来。
+    // 等启动完成再停（启动失败时 then 不执行，服务本就没起来，无需处理）。
+    if (this.startingPromise) {
+      this.startingPromise.then(
+        () => this.stop(),
+        () => { /* 启动失败，服务没起来，不用停 */ }
+      );
+      return;
+    }
     if (this.server && this.isRunning) {
       this.server.close();
       this.server = null;

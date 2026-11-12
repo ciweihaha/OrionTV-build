@@ -61,6 +61,22 @@ export function parseEpgTime(time: string): number {
   const hour = Number(h);
   const minute = Number(mi);
   const second = Number(s);
+  // 范围校验：月份 13、日 32 这类非法值经 Date.UTC/new Date 会静默进位
+  //（13 月变次年 1 月），isUsableProgramme 只判 endAt > startAt，脏数据
+  // 会变成看似合法的时间。先粗判范围，再回读校验（2 月 30 日这类也拦住）。
+  if (
+    month < 0 || month > 11 ||
+    day < 1 || day > 31 ||
+    hour < 0 || hour > 23 ||
+    minute < 0 || minute > 59 ||
+    second < 0 || second > 59
+  ) return 0;
+  const roundTrip = new Date(Date.UTC(year, month, day, hour, minute, second));
+  if (
+    roundTrip.getUTCFullYear() !== year ||
+    roundTrip.getUTCMonth() !== month ||
+    roundTrip.getUTCDate() !== day
+  ) return 0;
   if (tzH !== undefined) {
     // 带时区：按 UTC 算再减时区偏移。注意分钟也要带符号：-0530 是 -5.5 小时，
     // 不能按 (-5*60 + 30) 算成 -4.5 小时（分与时同号）。
