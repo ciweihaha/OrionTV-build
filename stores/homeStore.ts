@@ -332,13 +332,18 @@ const useHomeStore = create<HomeState>((set, get) => ({
         // “点了筛选，列表没变，筛选行还消失了”。无筛选时保持回落。
         const hasActiveFilter = !!(loadRegion || loadYear);
 
+        // 豆瓣回落走用户服务器的 /api/douban，未配服务器时回落必抛
+        // API_URL_NOT_SET，只会把真正的 agg 网络错误掩盖成“请配置服务器地址”。
+        // 无服务器时不回落：失败直接抛 agg 原错，空列表直接显示空态。
+        const canFallbackToDouban = !!useSettingsStore.getState().apiBaseUrl?.trim();
+
         let result;
         try {
           result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter));
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
-          if (nextPg === 1 && !hasActiveFilter) {
+          if (nextPg === 1 && !hasActiveFilter && canFallbackToDouban) {
             await fallbackToDouban();
             return;
           }
@@ -356,6 +361,18 @@ const useHomeStore = create<HomeState>((set, get) => ({
               hasMore: false,
               error: null,
               cmsFilterAvailable: true,
+            });
+            return;
+          }
+          if (!canFallbackToDouban) {
+            // 无服务器可回落：agg 空列表即最终结果，显示空态，不抛错。
+            set({
+              contentData: [],
+              pageStart: 0,
+              aggPage: 1,
+              hasMore: false,
+              error: null,
+              cmsFilterAvailable: false,
             });
             return;
           }
