@@ -2,11 +2,29 @@
 // Flat config for ESLint 9 + eslint-config-expo 58.
 const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
+const globals = require('globals');
 
 module.exports = defineConfig([
   expoConfig,
   {
     ignores: ['dist/*'],
+  },
+  {
+    // Node 脚本（scripts/ 与 Expo config plugin）：需要完整的 Node 全局量
+    //（__dirname 等）。expo 默认配置只给 metro.config.js 开 Node 环境，
+    //其它 .js 文件只有 require/module/process/console。
+    files: ['scripts/**/*.js', 'plugins/**/*.js'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    // JS 测试文件：jest 全局量（describe/it/expect）。TS 测试不受影响
+    //（typescript-eslint 会关掉 no-undef，改由 tsc 检查）。
+    files: ['**/*.test.js'],
+    languageOptions: {
+      globals: globals.jest,
+    },
   },
   {
     // React Compiler 规则（eslint-plugin-react-hooks v6）：本项目未启用

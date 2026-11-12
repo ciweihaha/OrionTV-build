@@ -5,7 +5,23 @@
 ## 版本号
 
 - 唯一版本来源：`package.json` 的 `version` 字段。
-- 升版时只改该字段并提交，提交信息注明轮次与改动（如“第113轮：版本号升到 1.6.8”）。
+- 升版时同时改三处并提交：`package.json` 的 `version`、`app.json` 的
+  `expo.version`、`app.json` 的 `expo.android.versionCode`（规则：
+  major×10000 + minor×100 + patch，如 1.6.8 → 10608）。提交信息注明轮次与
+  改动（如“第113轮：版本号升到 1.6.8”）。
+- CI 会校验三处一致（`yarn check-version`，见 `scripts/sync-version.js`），
+  漂移即失败。构建工作流还会再从 `package.json` 派生一次作为兜底，所以即使
+  忘了同步，出的 APK 版本号也是对的。
+- 曾经漂移过一次：`app.json` 停留在 1.6.1 而 `package.json` 到了 1.6.8，
+  且 `versionCode` 从未设置过（所有 APK 都是 versionCode 1），2026-11 审查
+  M1 修好。
+
+## 签名
+
+- Release APK 用项目专用的 release keystore 签名（2026-11 审查 H1 之前用的是
+  公开 debug key）。机制与 4 个 Secret 见 `docs/release-signing.md`。
+- **第一次用新签名的版本**：已装旧版的用户必须先卸载再安装，无法直接覆盖
+  更新，发版公告要写明。之后版本之间签名一致，正常更新即可。
 
 ## 构建与 Release
 
