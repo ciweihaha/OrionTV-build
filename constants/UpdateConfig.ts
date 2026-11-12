@@ -11,8 +11,13 @@ export const UPDATE_CONFIG = {
     `https://ysp.ciweihaha.win/agg?ac=oriontv-version`,
 
   // 获取平台特定的下载URL
+  // 版本号先校验格式再拼 URL（L5）：版本号来自版本检查的服务端响应，
+  // 未校验就插值可能拼出畸形地址；格式为语义化版本，可带 -beta/-rc 等后缀。
   getDownloadUrl(version: string): string {
-          return `https://dl.ciweihaha.win/orionTV.${version}.apk`;
+    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
+      throw new Error(`Invalid version format: ${version}`);
+    }
+    return `https://dl.ciweihaha.win/orionTV.${version}.apk`;
   },
 
   // 是否显示更新日志

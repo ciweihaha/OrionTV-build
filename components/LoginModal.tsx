@@ -12,6 +12,18 @@ import { ThemedView } from "./ThemedView";
 import { ThemedText } from "./ThemedText";
 import { StyledButton } from "./StyledButton";
 
+// 明文 HTTP 登录风险提示（M2）：同一会话内只提示一次，模块级标记，
+// Modal 反复打开也不重复弹
+let httpWarningShown = false;
+
+/** 是否为非 localhost 的明文 http 地址：凭据会以明文传输，局域网可嗅探 */
+function isInsecureHttpUrl(url: string): boolean {
+  const match = /^http:\/\/([^/:?#]+)/i.exec(url.trim());
+  if (!match) return false;
+  const host = match[1].toLowerCase();
+  return host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]" && !host.endsWith(".localhost");
+}
+
 const LoginModal = () => {
   const { isLoginModalVisible, hideLoginModal, checkLoginStatus } = useAuthStore();
   const { serverConfig, apiBaseUrl } = useSettingsStore();
@@ -84,6 +96,27 @@ const LoginModal = () => {
     if (!password || (!isLocalStorage && !username)) {
       Toast.show({ type: "error", text1: "请输入用户名和密码" });
       return;
+    }
+    // 明文 HTTP 登录风险提示（M2）：非 localhost 的 http:// 下用户名/密码以明文
+    // JSON 发送，同一局域网攻击者可嗅探；同一会话内只提示一次，用户确认后继续
+    if (!httpWarningShown && isInsecureHttpUrl(api.baseURL)) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "明文连接风险",
+          "当前服务器使用未加密的 HTTP 连接，登录的用户名和密码将以明文传输，同一局域网内的其他设备可能窃听到。建议为服务器配置 HTTPS（详见 docs/security-notes.md）。是否仍要继续登录？",
+          [
+            { text: "取消", style: "cancel", onPress: () => resolve(false) },
+            {
+              text: "仍要登录",
+              onPress: () => {
+                httpWarningShown = true;
+                resolve(true);
+              },
+            },
+          ],
+        );
+      });
+      if (!confirmed) return;
     }
     setIsLoading(true);
     try {

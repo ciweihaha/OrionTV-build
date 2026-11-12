@@ -7,6 +7,7 @@ import Toast from 'react-native-toast-message';
 import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
 import { Logger } from '@/utils/Logger';
+import { readJsonWithLimit } from './httpBody';
 import { Platform } from 'react-native';
 
 const logger = Logger.withTag('UpdateService');
@@ -23,6 +24,9 @@ const ANDROID_MIME_TYPE = 'application/vnd.android.package-archive';
 
 /** 版本检查请求超时（毫秒，2026-10-28：10 秒放宽到 20 秒，国内网络容错） */
 const VERSION_CHECK_TIMEOUT_MS = 20_000;
+/** 版本检查响应最大体积：与 api.ts 的 JSON 上限一致（2MB），防被劫持的
+ * 版本端点返回超大 JSON 占满内存（L5）。正常响应只是个小对象。 */
+const MAX_VERSION_CHECK_BYTES = 2 * 1024 * 1024;
 /** SHA256 文件获取超时（毫秒） */
 const SHA256_FETCH_TIMEOUT_MS = 15_000;
 /**
@@ -61,9 +65,17 @@ class UpdateService {
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
           }
-          // 超时须覆盖到响应体读完，且计时器在所有路径（含 fetch 抛错）都清理
-          const remotePackage = await response.json();
-          const remoteVersion = remotePackage.version as string;
+          // 超时须覆盖到响应体读完，且计时器在所有路径（含 fetch 抛错）都清理。
+          // 体读取走共享工具（L5）：带 2MB 体积上限与独立体超时 race——
+          // RN 下 response.json() 无法被 AbortSignal 中断，只靠上面的定时器，
+          // 慢速服务端能让调用挂起远超 20 秒（同 M6）。
+          const remotePackage = await readJsonWithLimit<{ version?: unknown }>(
+            response,
+            MAX_VERSION_CHECK_BYTES,
+            VERSION_CHECK_TIMEOUT_MS,
+            controller.signal,
+          );
+          const remoteVersion = remotePackage?.version as string;
           // 校验版本号：服务端返回异常内容（如错误页）时不能拿着 undefined 去拼下载地址，
           // 否则下载阶段才报一个看不懂的错
           if (!remoteVersion || typeof remoteVersion !== "string") {
@@ -232,6 +244,23 @@ class UpdateService {
           });
           throw e;
         }
+        // SHA256 相关失败同样是确定性失败（文件被篡改/损坏，或校验文件有问题），
+        // 重试只会白白重下整个 APK（约 50MB×3）：立即抛错不重试（L4，与
+        // APK_TOO_LARGE 同款处理）。其中 .sha256 拉取失败/格式无效已在
+        // verifyApkSha256 内弹过更具体的提示，这里不再重复弹。
+        if (e instanceof Error && e.message.includes('SHA256')) {
+          const alreadyToasted =
+            e.message.includes('cannot obtain expected hash') ||
+            e.message.includes('invalid expected hash format');
+          if (!alreadyToasted) {
+            Toast.show({
+              type: 'error',
+              text1: '安全校验失败',
+              text2: 'APK 完整性校验未通过，已删除该文件，请勿安装',
+            });
+          }
+          throw e;
+        }
         if (attempt === UPDATE_MAX_RETRIES) {
           const isShaError = e instanceof Error && e.message.includes('SHA256');
           Toast.show({
@@ -308,8 +337,10 @@ class UpdateService {
    * 说明：expo-crypto 的 digestStringAsync 只能对字符串做哈希，
    * 对二进制文件内容做 UTF-8 编码后再哈希会得到错误结果，
    * 因此这里用标准 SHA256 算法直接处理字节数组。
-   * 实现为增量式：每次读取 1MB base64 块，解码后送入哈希状态，
-   * 峰值内存与文件大小无关。
+   * 实现为增量式：readableStream 约 1KB 一块流式读入，按 64 字节块送入
+   * 哈希状态（不足一块的尾部暂存 leftover），峰值内存与文件大小无关。
+   * 注意：旧注释称“每次读取 1MB base64 块”已过期——实现从未用过 base64，
+   * 块大小也由流实现决定（约 1KB），特此修正（L6）。
    */
   private async sha256OfFile(fileUri: string): Promise<string> {
     const file = new File(fileUri);
@@ -363,8 +394,11 @@ class UpdateService {
       h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
     };
 
-    // 增量读取：expo-file-system 58 用 readableStream 流式读（默认 1KB 一块），
-    // leftover 保存不足 64 字节的尾部
+    // 增量读取：expo-file-system 58 用 readableStream 流式读（默认约 1KB 一块），
+    // leftover 保存不足 64 字节的尾部。整块直接从 chunk 切片送入 processBlock
+    // （零拷贝）；只有 leftover 非空时才拼一块 64 字节临时块。原来每块都
+    // new Uint8Array(leftover + chunk) 全量拼接拷贝，几十 MB 的 APK 要经过
+    // 数万次拷贝，在电视弱硬件上耗时较长（L6）。
     let leftover = new Uint8Array(0);
     let processedBytes = 0;
     const reader = file.readableStream().getReader();
@@ -372,17 +406,36 @@ class UpdateService {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = value;
-        // 拼接 leftover + chunk，按 64 字节块处理
-        const combined = new Uint8Array(leftover.length + chunk.length);
-        combined.set(leftover);
-        combined.set(chunk, leftover.length);
-        const fullBlocks = Math.floor(combined.length / 64);
-        for (let b = 0; b < fullBlocks; b++) {
-          processBlock(combined.subarray(b * 64, b * 64 + 64));
-        }
-        leftover = combined.subarray(fullBlocks * 64);
+        let chunk = value;
         processedBytes += chunk.length;
+        // 先用 chunk 的头部把 leftover 补满一块（64 字节）
+        if (leftover.length > 0) {
+          const need = 64 - leftover.length;
+          if (chunk.length >= need) {
+            const block = new Uint8Array(64);
+            block.set(leftover);
+            block.set(chunk.subarray(0, need), leftover.length);
+            processBlock(block);
+            chunk = chunk.subarray(need);
+            leftover = new Uint8Array(0);
+          } else {
+            // chunk 不够补一块：并进 leftover，等下一块（最多 63 字节拷贝）
+            const merged = new Uint8Array(leftover.length + chunk.length);
+            merged.set(leftover);
+            merged.set(chunk, leftover.length);
+            leftover = merged;
+            continue;
+          }
+        }
+        // 整块直接切片处理，零拷贝
+        const fullBlocks = Math.floor(chunk.length / 64);
+        for (let b = 0; b < fullBlocks; b++) {
+          processBlock(chunk.subarray(b * 64, b * 64 + 64));
+        }
+        // 尾部不足一块：slice 拷贝留到下一轮（不直接存 subarray 视图，
+        // 流实现可能复用底层 buffer，视图会被后续读取覆盖）
+        const tail = chunk.subarray(fullBlocks * 64);
+        leftover = tail.length > 0 ? tail.slice() : new Uint8Array(0);
       }
     } finally {
       reader.releaseLock();
@@ -443,9 +496,12 @@ class UpdateService {
 
     // ③ 拉起系统安装器
     try {
-      // FLAG_ACTIVITY_NEW_TASK = 0x10000000 (1)
-      // FLAG_GRANT_READ_URI_PERMISSION = 0x00000010
-      const flags = 1 | 0x00000010;   // 1 | 16
+      // FLAG_ACTIVITY_NEW_TASK = 0x10000000：从非 Activity 上下文拉起安装器必须带，
+      // 否则系统可能拒绝启动；FLAG_GRANT_READ_URI_PERMISSION = 0x00000001：
+      // 授权安装器读取 content:// URI。旧写法 `1 | 0x00000010` 的注释把 1 误写成
+      // NEW_TASK，实际 flags 为 17（READ + 无关的 FLAG_EXCLUDE_STOPPED_PACKAGES），
+      // 并未设置 NEW_TASK（L11）。
+      const flags = 0x10000000 | 0x00000001;
 
       await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
         data: contentUri,          // 必须是 content://
@@ -471,7 +527,9 @@ class UpdateService {
         Toast.show({
           type: 'error',
           text1: '安装失败',
-          text2: '未知错误，请稍后重试',
+          // Release 签名刚从公开 debug key 换成专用 release key：旧版本用户
+          // 直接覆盖安装会因签名不一致失败，需卸载旧版后重装一次
+          text2: '未知错误，请稍后重试。旧版本升级失败时，可能是签名变更导致，请先卸载旧版再安装',
         });
       }
       throw e;

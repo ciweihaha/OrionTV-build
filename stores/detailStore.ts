@@ -7,6 +7,27 @@ import { Logger } from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
+/** 标准搜索与 m3u8 清晰度检测的并发上限：启用源多时全部并行会瞬间打爆服务端/占满连接池 */
+const SEARCH_CONCURRENCY_LIMIT = 5;
+
+/**
+ * 带并发上限的任务执行器：按顺序启动任务，同时运行不超过 limit 个，
+ * 全部完成后返回结果（与 Promise.all 同语义：任一任务抛错即 reject，
+ * 但已在飞的任务仍会跑完）。搜索扇出与 m3u8 清晰度检测共用。
+ */
+async function runWithConcurrencyLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (next < tasks.length) {
+      const index = next++;
+      results[index] = await tasks[index]();
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export type SearchResultWithResolution = SearchResult & { resolution?: string | null };
 
 interface DetailState {
@@ -60,6 +81,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
       error: null,
       allSourcesLoaded: false,
       controller: newController,
+      // 失败源是按视频记的：不清空的话，视频 A 上失败的源会在整个会话内
+      // 对所有其他视频的回落都被排除（M3）
+      failedSources: new Set(),
     });
 
     const { videoSource } = useSettingsStore.getState();
@@ -89,9 +113,10 @@ const useDetailStore = create<DetailState>((set, get) => ({
       });
 
       // 后台逐个测清晰度：不 await，调用方清 loading 不用等它；
-      // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写
-      void Promise.all(
-        results.map(async (searchResult) => {
+      // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写。
+      // 并发上限 5：每个源 1 个 m3u8 检测，源多时全部并行会瞬间占满连接池（L18b）
+      void runWithConcurrencyLimit(
+        results.map((searchResult) => async () => {
           let resolution;
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
@@ -111,7 +136,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
               s.source === searchResult.source ? { ...s, resolution } : s
             ),
           }));
-        })
+        }),
+        SEARCH_CONCURRENCY_LIMIT,
       );
     };
 
@@ -233,7 +259,10 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
           let firstResultFound = false;
           let totalResults = 0;
-          const searchPromises = enabledResources.map(async (resource) => {
+          // 搜索任务以函数形式交给并发池：启用源多时全部并行会瞬间发出 N 个
+          // 请求，上限 5 个同时进行（L18b）；任务内自带 try/catch，单个源
+          // 失败不影响其他源，与原来 Promise.all 的行为一致
+          const searchTasks = enabledResources.map((resource) => async () => {
             try {
               const searchStart = performance.now();
               const { results } = await api.searchVideo(q, resource.key, signal);
@@ -260,7 +289,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           });
 
-          await Promise.all(searchPromises);
+          await runWithConcurrencyLimit(searchTasks, SEARCH_CONCURRENCY_LIMIT);
           
           // 检查是否找到任何结果（已取消时不写 error：新一次 init 正在跑，
           // 旧错误会盖掉新结果，详情页直接显示“未找到”）

@@ -299,19 +299,24 @@ export default function LiveScreen() {
       if (deviceType !== 'tv') return;
       if (isChannelListVisible) return;
       const t = event.eventType ?? "";
-      // 数字键换台（V1.5）：先于方向键处理
+      // 以下离散按键（含数字键）只响应松键（eventKeyAction === 1）：原生层对同一
+      // 按键在 ACTION_DOWN 与 ACTION_UP 各发一次事件（第 97 轮），不守会一次按键
+      // 执行两次——左右换台一次连跳两台、菜单收藏刚加上就又被取消。数字键走的是
+      // 同一条 useTVEventHandler 事件通道（L12：原来数字分支在守卫之前先行返回，
+      // 每按一位数字会输入两次，如按 5 变 55，现移到守卫之后）。eventKeyAction 缺失
+      // （NaN）的设备不受守卫影响，仍按原样处理。
+      // TODO（需真机验证）：以上依据是代码分析（同一事件通道 + 原生层双发注释），
+      // 未在真机上验证数字键是否确实双发；若真机上数字键只发按下事件，本分支需要
+      // 改回守卫之前。
+      const keyAction = Number(event.eventKeyAction);
+      if (!Number.isNaN(keyAction) && keyAction !== 1) {
+        return; // 按下那次不处理，只处理松键那次
+      }
+      // 数字键换台（V1.5）
       const digit = /^[0-9]$/.test(t) ? t : DIGIT_KEY_MAP[t];
       if (digit) {
         handleDigit(digit);
         return;
-      }
-      // 以下离散按键只响应松键（eventKeyAction === 1）：原生层对同一按键在
-      // ACTION_DOWN 与 ACTION_UP 各发一次事件（第 97 轮），不守会一次按键执行两次——
-      // 左右换台一次连跳两台、菜单收藏刚加上就又被取消。数字键分支在上面已先行
-      // 返回，不受这条守卫影响。
-      const keyAction = Number(event.eventKeyAction);
-      if (!Number.isNaN(keyAction) && keyAction !== 1) {
-        return; // 按下那次不处理，只处理松键那次
       }
       if (t === "menu") {
         toggleFavCurrent();
@@ -333,8 +338,12 @@ export default function LiveScreen() {
 
   useTVEventHandler(deviceType === 'tv' ? handleTVEvent : () => {});
 
-  // 动态样式
-  const dynamicStyles = createResponsiveStyles(deviceType, spacing);
+  // 动态样式：createResponsiveStyles 每 render 都重新 StyleSheet.create，
+  // 用 useMemo memo 化（L18c），只随 deviceType/spacing 变化重建
+  const dynamicStyles = useMemo(
+    () => createResponsiveStyles(deviceType, spacing),
+    [deviceType, spacing],
+  );
 
   // 频道列表数据（V1.5：搜索过滤时跨全部频道，否则按当前分组）
   const visibleChannels = useMemo(() => {

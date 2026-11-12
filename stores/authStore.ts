@@ -68,7 +68,10 @@ const useAuthStore = create<AuthState>((set, get) => ({
       const authToken = await AsyncStorage.getItem('authCookies');
       if (!authToken || authToken.trim() === '') {
         if (serverConfig && serverConfig.StorageType === "localstorage") {
-          const loginResult = await api.login().catch(() => {
+          // 带密码的 localstorage 服务：优先用已保存的密码尝试登录，免得每次
+          // 冷启动都要用户手动重输密码；无保存密码时传 undefined，等价于无参登录
+          const savedCreds = await LoginCredentialsManager.get();
+          const loginResult = await api.login(undefined, savedCreds?.password || undefined).catch(() => {
             set({ isLoggedIn: false, isLoginModalVisible: true });
           });
           if (loginResult && loginResult.ok) {
@@ -101,14 +104,18 @@ const useAuthStore = create<AuthState>((set, get) => ({
     if (!restorePromise) {
       restorePromise = (async () => {
         const creds = await LoginCredentialsManager.get();
-        if (!creds || !creds.username) {
+        // 仅密码凭据也可用：localstorage 服务登录时只输密码，LoginModal 保存的
+        // 是 {username: "", password}；只有用户名和密码都空才算无可用凭据
+        if (!creds || (!creds.username && !creds.password)) {
           // 无可用凭据，需要用户手动登录。
           set({ isLoggedIn: false, isLoginModalVisible: true });
           return;
         }
         try {
           // 用保存的用户名/密码自动登录，服务器会在成功时刷新 authCookies。
-          const result = await api.login(creds.username, creds.password);
+          // 用户名为空时传 undefined（与 LoginModal 的 localstorage 登录一致），
+          // 有用户名的服务仍按原样传用户名，行为不变。
+          const result = await api.login(creds.username || undefined, creds.password);
           if (result && result.ok) {
             set({ isLoggedIn: true, isLoginModalVisible: false });
           } else {
