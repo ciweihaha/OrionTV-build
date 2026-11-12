@@ -7,7 +7,7 @@ import Toast from 'react-native-toast-message';
 import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
 import { Logger } from '@/utils/Logger';
-import { readJsonWithLimit } from './httpBody';
+import { readJsonWithLimit, readTextWithLimit } from './httpBody';
 import { Platform } from 'react-native';
 
 const logger = Logger.withTag('UpdateService');
@@ -29,6 +29,10 @@ const VERSION_CHECK_TIMEOUT_MS = 20_000;
 const MAX_VERSION_CHECK_BYTES = 2 * 1024 * 1024;
 /** SHA256 文件获取超时（毫秒） */
 const SHA256_FETCH_TIMEOUT_MS = 15_000;
+/** SHA256 文件最大体积：正常是 "hash  filename" 一行（约 100 字节），4KB 已留足
+ * 余量；超限返回 null，调用方 fail-closed 中止更新（防被劫持的端点返回超大
+ * 文本占满内存，resp.text() 无上限）。 */
+const MAX_SHA256_FILE_BYTES = 4 * 1024;
 /**
  * APK 下载体积上限（200MB）：防被投毒/劫持的 CDN 返回超大文件占满设备存储。
  * 正常 release APK 约几十 MB，200MB 已留足余量。
@@ -90,7 +94,22 @@ class UpdateService {
         }
       } catch (e) {
         logger.warn(`checkVersion attempt ${attempt}/${UPDATE_MAX_RETRIES}`, e);
-        if (attempt === UPDATE_MAX_RETRIES) {
+        // 确定性错误不重试：版本文件内容异常、4xx、响应超限、JSON 损坏——
+        // 原样重发只会得到同一答复，白白多等 2 次 × 退避。
+        let isDeterministic = false;
+        if (e instanceof Error) {
+          if (e.message === 'Invalid version info from server') isDeterministic = true;
+          else if (e.message.startsWith('RESPONSE_TOO_LARGE')) isDeterministic = true;
+          else {
+            const httpMatch = e.message.match(/^HTTP (\d+)$/);
+            if (httpMatch) {
+              const status = Number(httpMatch[1]);
+              if (status >= 400 && status < 500) isDeterministic = true;
+            }
+          }
+        }
+        if (e instanceof SyntaxError) isDeterministic = true;
+        if (isDeterministic || attempt === UPDATE_MAX_RETRIES) {
           Toast.show({
             type: 'error',
             text1: '检查更新失败',
@@ -142,6 +161,9 @@ class UpdateService {
   /**
    * 下载前用 HEAD 请求预检 APK 体积，超限直接拒绝，避免下载超大恶意文件。
    * 拿不到 Content-Length 时放行（由下载进度回调兜底）。
+   * HEAD 请求本身失败（网络抖动、CDN 不支持 HEAD、超时）也放行：预检只是
+   * 优化手段，下载进度回调同样会强制执行体积上限；让预检失败中止整个下载
+   * 是本末倒置（尤其部分 CDN 对 HEAD 返回 405/403）。
    */
   private async assertApkSizeAcceptable(url: string): Promise<void> {
     const controller = new AbortController();
@@ -155,6 +177,11 @@ class UpdateService {
           throw new Error(`APK_TOO_LARGE: declared ${bytes} bytes`);
         }
       }
+    } catch (e) {
+      // 只有超限才中止；其余（网络失败、超时、HEAD 不支持）都只是“拿不到
+      // 声明体积”，记一条日志后放行，下载进度回调兜底。
+      if (e instanceof Error && e.message.startsWith('APK_TOO_LARGE')) throw e;
+      logger.warn('APK HEAD pre-check failed, proceeding (size enforced during download):', e);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -297,8 +324,15 @@ class UpdateService {
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
-        // 超时须覆盖到响应体读完，且计时器在所有路径（含 fetch 抛错）都清理
-        text = (await resp.text()).trim();
+        // 超时须覆盖到响应体读完，且计时器在所有路径（含 fetch 抛错）都清理。
+        // 体读取走共享工具：带 4KB 体积上限（sha256 文件正常约 100 字节），
+        // 超限返回 null，fail-closed 中止更新；裸 resp.text() 无上限，
+        // 被劫持的端点返回超大文本会占满内存。
+        const limited = await readTextWithLimit(resp, MAX_SHA256_FILE_BYTES, SHA256_FETCH_TIMEOUT_MS, controller.signal);
+        if (limited === null) {
+          throw new Error("SHA256_TOO_LARGE");
+        }
+        text = limited.trim();
       } finally {
         clearTimeout(timeoutId);
       }

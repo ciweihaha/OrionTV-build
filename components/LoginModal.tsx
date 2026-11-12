@@ -8,9 +8,12 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import useHomeStore from "@/stores/homeStore";
 import { api } from "@/services/api";
 import { LoginCredentialsManager } from "@/services/storage";
+import { Logger } from "@/utils/Logger";
 import { ThemedView } from "./ThemedView";
 import { ThemedText } from "./ThemedText";
 import { StyledButton } from "./StyledButton";
+
+const logger = Logger.withTag("LoginModal");
 
 // 明文 HTTP 登录风险提示（M2）：同一会话内只提示一次，模块级标记，
 // Modal 反复打开也不重复弹
@@ -132,7 +135,18 @@ const LoginModal = () => {
       await refreshPlayRecords();
 
       // Save credentials on successful login
-      await LoginCredentialsManager.save({ username, password });
+      // 保存失败不能当登录失败：登录已成功，只是下次启动无法自动登录；
+      // 单独提示，继续走登录成功流程（不要让外层 catch 弹“登录失败”）。
+      try {
+        await LoginCredentialsManager.save({ username, password });
+      } catch (saveError) {
+        Toast.show({
+          type: "error",
+          text1: "登录成功，但保存凭据失败",
+          text2: "下次启动需要重新登录",
+        });
+        logger.warn("Login succeeded but saving credentials failed:", saveError);
+      }
 
       Toast.show({ type: "success", text1: "登录成功" });
 

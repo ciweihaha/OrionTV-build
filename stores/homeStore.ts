@@ -169,6 +169,9 @@ const dataCache = new Map<string, CacheItem>();
 // 正在进行的 loadMoreData 属于哪个分类：切分类时旧请求可能还在飞，
 // 新分类的加载不能被旧请求的 loadingMore 挡住（旧请求写结果时会被分类校验拦下）。
 let activeLoadCategory: Category | null = null;
+// 本次加载的取消控制器：新加载开始时中止上一次（切分类/切筛选后旧请求
+// 的结果会被 isStale 丢弃，没必要继续重试到 3 次 × 15 秒）。
+let activeLoadController: AbortController | null = null;
 
 // 正在进行的 loadMoreData 属于哪组筛选：切筛选时旧请求可能还在飞，
 // 新筛选的加载不能被旧请求的 loadingMore 挡住（与分类同理）。
@@ -252,6 +255,12 @@ const useHomeStore = create<HomeState>((set, get) => ({
     activeLoadCategory = selectedCategory;
     activeLoadRegion = loadRegion;
     activeLoadYear = loadYear;
+    // 取消上一次加载的请求（同分类重复加载已被上面的 guard 拦下，走到这里
+    // 一定是换了分类/筛选，旧请求的结果注定被 isStale 丢弃）。
+    activeLoadController?.abort();
+    const loadController = new AbortController();
+    activeLoadController = loadController;
+    const loadSignal = loadController.signal;
 
     if (selectedCategory.cmsType ? aggPage > 0 : pageStart > 0) {
       set({ loadingMore: true });
@@ -304,7 +313,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           const cat = get().selectedCategory;
           const fallbackType = cat.type === "movie" ? "movie" : "tv";
           const fallbackTag = getCmsFallbackTag(cat);
-          const doubanResult = await api.getDoubanData(fallbackType, fallbackTag, 20, 0);
+          const doubanResult = await api.getDoubanData(fallbackType, fallbackTag, 20, 0, loadSignal);
           if (isStale()) return;
           // 与 getAggCategory 一致：先校验 list 是数组，异常结构抛有意义的错误（L9）
           if (!Array.isArray(doubanResult?.list)) {
@@ -339,7 +348,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
         let result;
         try {
-          result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter));
+          result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter), loadSignal);
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
@@ -451,7 +460,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
           selectedCategory.type,
           selectedCategory.tag,
           20,
-          pageStart
+          pageStart,
+          loadSignal
         );
         if (isStale()) return;
 
@@ -583,6 +593,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
         activeLoadCategory = null;
         activeLoadRegion = null;
         activeLoadYear = null;
+        if (activeLoadController === loadController) {
+          activeLoadController = null;
+        }
       }
       // 分类已变：旧请求的 finally 不能清新分类的 loading/loadingMore，
       // 否则新分类还在加载，首页会先闪一下“暂无内容”

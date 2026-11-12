@@ -640,7 +640,11 @@ export class SettingsManager {
   }
 
   static async reset(): Promise<void> {
-    await AsyncStorage.removeItem(STORAGE_KEYS.SETTINGS);
+    // 必须走写队列：直接 removeItem 会绕过队列，若有 save 在排队/在途，
+    // remove 先执行、save 后写入，设置就“复活”了。
+    return enqueueLocalWrite(async () => {
+      await AsyncStorage.removeItem(STORAGE_KEYS.SETTINGS);
+    });
   }
 }
 
@@ -667,7 +671,10 @@ export class LoginCredentialsManager {
       // 兼容：清理旧版存在 AsyncStorage 里的明文凭据
       await AsyncStorage.removeItem(STORAGE_KEYS.LOGIN_CREDENTIALS);
     } catch (error) {
+      // 记日志后必须 rethrow：静默吞掉会让调用方以为保存成功，下次
+      // 启动自动登录时才发现凭据不在（LoginModal 会据此提示用户）。
       logger.error("Failed to save login credentials:", error);
+      throw error;
     }
   }
 
@@ -677,7 +684,10 @@ export class LoginCredentialsManager {
       // 兼容：同时清理旧版明文残留
       await AsyncStorage.removeItem(STORAGE_KEYS.LOGIN_CREDENTIALS);
     } catch (error) {
+      // 同 save：调用方（authStore logout）已有 try/catch，会记日志并
+      // 继续退出流程；这里 rethrow 是为了让调用方知道清理没成功。
       logger.error("Failed to clear login credentials:", error);
+      throw error;
     }
   }
 }

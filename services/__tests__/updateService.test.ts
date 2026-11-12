@@ -178,3 +178,83 @@ describe("UpdateService.sha256OfFile 标准向量", () => {
     mockFiles.delete(uri);
   });
 });
+
+function mockFetchResponse(status: number, textBody: string, contentLength?: string) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: { get: (name: string) => (name === "content-length" ? contentLength ?? null : null) },
+    body: undefined,
+    text: async () => textBody,
+  } as unknown as Response;
+}
+
+describe("UpdateService.checkVersion 确定性错误不重试（第 4 轮）", () => {
+  let fetchMock: jest.Mock;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("版本文件缺 version 字段：一次即抛，不重试 3 次", async () => {
+    fetchMock.mockResolvedValue(mockFetchResponse(200, JSON.stringify({ name: "OrionTV" })));
+    await expect(updateService.checkVersion()).rejects.toThrow("Invalid version info from server");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("4xx 不重试：一次 404 直接抛", async () => {
+    fetchMock.mockResolvedValue(mockFetchResponse(404, "not found"));
+    await expect(updateService.checkVersion()).rejects.toThrow("HTTP 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("UpdateService.verifyApkSha256 与 assertApkSizeAcceptable（第 4 轮）", () => {
+  let fetchMock: jest.Mock;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it(".sha256 超过 4KB：fail-closed 抛错，不继续校验", async () => {
+    fetchMock.mockResolvedValue(mockFetchResponse(200, "x".repeat(5000)));
+    await expect(
+      (updateService as any).verifyApkSha256("file:///docs/test.apk", "https://example.com/app")
+    ).rejects.toThrow("SHA256: cannot obtain expected hash");
+  });
+
+  it("HEAD 预检失败（网络错误）：放行，不中止下载", async () => {
+    fetchMock.mockRejectedValue(new Error("Network request failed"));
+    await expect(
+      (updateService as any).assertApkSizeAcceptable("https://example.com/app.apk")
+    ).resolves.toBeUndefined();
+  });
+
+  it("HEAD 预检失败（超时中止）：放行", async () => {
+    const err = new Error("The user aborted a request.");
+    err.name = "AbortError";
+    fetchMock.mockRejectedValue(err);
+    await expect(
+      (updateService as any).assertApkSizeAcceptable("https://example.com/app.apk")
+    ).resolves.toBeUndefined();
+  });
+
+  it("HEAD 声明体积超限：仍抛 APK_TOO_LARGE", async () => {
+    fetchMock.mockResolvedValue(
+      mockFetchResponse(200, "", String(300 * 1024 * 1024))
+    );
+    await expect(
+      (updateService as any).assertApkSizeAcceptable("https://example.com/app.apk")
+    ).rejects.toThrow("APK_TOO_LARGE");
+  });
+});
