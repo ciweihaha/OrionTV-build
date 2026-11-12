@@ -4,12 +4,22 @@ import { DeviceUtils } from '@/utils/DeviceUtils';
 
 /**
  * 通用响应式样式
+ *
+ * 按 deviceType:spacing 缓存：样式只依赖这两个字段（其余 config 字段不用），
+ * 而调用方每次渲染都调一次（首页/搜索/收藏/详情…），不缓存就每次都
+ * StyleSheet.create 一整套。组合数很少（3 种设备 × 几种间距），Map 不会膨胀。
  */
+const commonStylesCache = new Map<string, ReturnType<typeof StyleSheet.create>>();
+
 export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
   const { deviceType, spacing } = config;
+  const cacheKey = `${deviceType}:${spacing}`;
+  const cached = commonStylesCache.get(cacheKey);
+  if (cached) return cached;
+
   const minTouchTarget = DeviceUtils.getMinTouchTargetSize();
 
-  return StyleSheet.create({
+  const styles = StyleSheet.create({
     // 容器样式
     container: {
       flex: 1,
@@ -165,5 +175,8 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
       elevation: 5,
     } : {}, // TV端不需要阴影
   });
+
+  commonStylesCache.set(cacheKey, styles);
+  return styles;
 };
 

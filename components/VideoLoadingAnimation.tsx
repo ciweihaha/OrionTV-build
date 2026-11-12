@@ -2,6 +2,9 @@ import React, { useEffect, useRef } from "react";
 import { View, StyleSheet, Animated, Easing } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
+// 进度条宽度（与 styles.progressBar.width 一致）：scaleX 动画需要它算左锚点偏移
+const PROGRESS_BAR_WIDTH = 300;
+
 interface VideoLoadingAnimationProps {
   showProgressBar?: boolean;
 }
@@ -57,7 +60,9 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       Animated.timing(progressAnim, {
         toValue: 1,
         duration: 4000,
-        useNativeDriver: false, // width animation not supported by native driver
+        // 原来是 width 动画（JS 驱动，每帧占 JS 线程）；改 scaleX + translateX
+        // 组合（原生驱动）：scaleX 从左锚点展开，视觉与宽度动画一致
+        useNativeDriver: true,
         easing: Easing.inOut(Easing.ease),
       })
     );
@@ -101,9 +106,8 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       ...shapeAnimations,
     ]);
     parallel.start();
-    // 卸载时停掉所有循环动画：不然 Animated.loop 会一直跑，JS 驱动的那两条
-    // （进度条宽度）会在加载页消失后还每帧占 JS 线程；每次出现又新起一套，
-    // 用久了越积越多
+    // 卸载时停掉所有循环动画：不然 Animated.loop 会一直跑，加载页消失后
+    // 还在占资源；每次出现又新起一套，用久了越积越多
     return () => parallel.stop();
     // Animated values are stable refs created once on mount; the effect
     // intentionally runs only once, so the dep array stays empty.
@@ -125,10 +129,23 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
       ],
     },
     progress: {
-      width: progressAnim.interpolate({
-        inputRange: [0, 0.7, 1],
-        outputRange: ["0%", "100%", "100%"],
-      }),
+      // scaleX 从中心缩放，配 translateX 补偿成左锚点展开：
+      // translateX = -(1 - scaleX) * (宽/2)，与 scaleX 同输入范围线性变化，
+      // 两者始终同步，视觉上就是一条从左往右填满的进度条（含渐变拉伸）
+      transform: [
+        {
+          translateX: progressAnim.interpolate({
+            inputRange: [0, 0.7, 1],
+            outputRange: [-PROGRESS_BAR_WIDTH / 2, 0, 0],
+          }),
+        },
+        {
+          scaleX: progressAnim.interpolate({
+            inputRange: [0, 0.7, 1],
+            outputRange: [0, 1, 1],
+          }),
+        },
+      ],
     },
     textFade: {
       opacity: textFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }),
@@ -231,6 +248,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: {
+    width: PROGRESS_BAR_WIDTH,
     height: "100%",
     borderRadius: 3,
   },

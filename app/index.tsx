@@ -162,18 +162,21 @@ export default function HomeScreen() {
     }
   }, [loading, contentData.length, fadeAnim]);
 
-  const handleCategorySelect = (category: Category) => {
+  // 下面几个回调用 useCallback 稳定身份：CustomScrollView 已 memo，回调每渲染
+  // 一变就会让 memo 失效，列表跟着全量重渲染（VideoCard 虽 memo，但行容器
+  // 与 ScrollView 本身仍会重建）。
+  const handleCategorySelect = useCallback((category: Category) => {
     setSelectedTag(null);
     selectCategory(category);
-  };
+  }, [selectCategory]);
 
-  const handleTagSelect = (tag: string) => {
+  const handleTagSelect = useCallback((tag: string) => {
     setSelectedTag(tag);
     if (selectedCategory) {
       const categoryWithTag = { ...selectedCategory, tag: tag };
       selectCategory(categoryWithTag);
     }
-  };
+  }, [selectedCategory, selectCategory]);
 
   const isCmsCategory = !!selectedCategory?.cmsType;
   // 最近播放是本地记录分类，同样不依赖服务器配置（与 CMS 同理豁免）。
@@ -182,98 +185,9 @@ export default function HomeScreen() {
   // 年代选项：全部 + 当前年份往回 6 年，首屏算一次即可（跨年需重进应用才更新）。
   const yearOptions = React.useMemo(() => getYearOptions(), []);
 
-  const renderCategory = ({ item }: { item: Category }) => {
-    const isSelected = selectedCategory?.title === item.title;
-    return (
-      <StyledButton
-        text={item.title}
-        onPress={() => handleCategorySelect(item)}
-        isSelected={isSelected}
-        style={dynamicStyles.categoryButton}
-        textStyle={dynamicStyles.categoryText}
-      />
-    );
-  };
-
-  const renderContentItem = ({ item, ref }: { item: RowItem; index: number; ref?: React.Ref<any> }) => (
-    <VideoCard
-      ref={ref}
-      id={item.id}
-      source={item.source}
-      title={item.title}
-      poster={item.poster}
-      year={item.year}
-      rate={item.rate}
-      progress={item.progress}
-      playTime={item.play_time}
-      episodeIndex={item.episodeIndex}
-      sourceName={item.sourceName}
-      totalEpisodes={item.totalEpisodes}
-      api={api}
-      onRecordDeleted={fetchInitialData}
-    />
-  );
-
-  const renderFooter = () => {
-    if (!loadingMore) return null;
-    return <ActivityIndicator style={{ marginVertical: 20 }} size="large" />;
-  };
-
-  // 检查是否需要显示API配置提示
-  // CMS 分类不走这条：agg 地址硬编码直连，不依赖用户服务器；未配服务器时
-  // CMS 内容照样能加载，配置提示不能盖住它（否则动漫/综艺这类无 tags 的
-  // CMS 分类在新装应用上永远显示“请配置服务器地址”，用户以为连不上网）。
-  // 最近播放（本地记录）同样豁免：本地数据不需要服务器配置。
-  const shouldShowApiConfig =
-    apiConfigStatus.needsConfiguration &&
-    selectedCategory &&
-    !selectedCategory.tags &&
-    !selectedCategory.cmsType &&
-    !isRecordCategory;
-
-  // TV端和平板端的顶部导航
-  const renderHeader = () => {
-    if (deviceType === "mobile") {
-      // 移动端不显示顶部导航，使用底部Tab导航
-      return null;
-    }
-
-    return (
-      <View style={dynamicStyles.headerContainer}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <ThemedText style={dynamicStyles.headerTitle}>首页</ThemedText>
-          <Pressable android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }} style={{ marginLeft: 20 }} onPress={() => router.push("/live")}>
-            {({ focused }) => (
-              <ThemedText style={[dynamicStyles.headerTitle, { color: focused ? "white" : "grey" }]}>直播</ThemedText>
-            )}
-          </Pressable>
-        </View>
-        <View style={dynamicStyles.rightHeaderButtons}>
-          <StyledButton style={dynamicStyles.iconButton} onPress={() => router.push("/favorites")} variant="ghost">
-            <Heart color={colorScheme === "dark" ? "white" : "black"} size={24} />
-          </StyledButton>
-          <StyledButton
-            style={dynamicStyles.iconButton}
-            onPress={() => router.push({ pathname: "/search" })}
-            variant="ghost"
-          >
-            <Search color={colorScheme === "dark" ? "white" : "black"} size={24} />
-          </StyledButton>
-          <StyledButton style={dynamicStyles.iconButton} onPress={() => router.push("/settings")} variant="ghost">
-            <Settings color={colorScheme === "dark" ? "white" : "black"} size={24} />
-          </StyledButton>
-          {isLoggedIn && (
-            <StyledButton style={dynamicStyles.iconButton} onPress={logout} variant="ghost">
-              <LogOut color={colorScheme === "dark" ? "white" : "black"} size={24} />
-            </StyledButton>
-          )}
-        </View>
-      </View>
-    );
-  };
-
-  // 动态样式
-  const dynamicStyles = StyleSheet.create({
+  // 动态样式只在布局相关值变化时重建：原来每次渲染都 StyleSheet.create
+  // 一整套；且 renderCategory 依赖它，不 memo 的话 useCallback 也稳不住。
+  const dynamicStyles = React.useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       paddingTop: deviceType === "mobile" ? insets.top : deviceType === "tablet" ? insets.top + 20 : 40,
@@ -343,7 +257,100 @@ export default function HomeScreen() {
     contentContainer: {
       flex: 1,
     },
-  });
+  }), [deviceType, insets.top, spacing]);
+
+  const renderCategory = useCallback(({ item }: { item: Category }) => {
+    const isSelected = selectedCategory?.title === item.title;
+    return (
+      <StyledButton
+        text={item.title}
+        onPress={() => handleCategorySelect(item)}
+        isSelected={isSelected}
+        style={dynamicStyles.categoryButton}
+        textStyle={dynamicStyles.categoryText}
+      />
+    );
+  }, [selectedCategory, handleCategorySelect, dynamicStyles]);
+
+  const renderContentItem = useCallback(({ item, ref }: { item: RowItem; index: number; ref?: React.Ref<any> }) => (
+    <VideoCard
+      ref={ref}
+      id={item.id}
+      source={item.source}
+      title={item.title}
+      poster={item.poster}
+      year={item.year}
+      rate={item.rate}
+      progress={item.progress}
+      playTime={item.play_time}
+      episodeIndex={item.episodeIndex}
+      sourceName={item.sourceName}
+      totalEpisodes={item.totalEpisodes}
+      api={api}
+      onRecordDeleted={fetchInitialData}
+    />
+  ), [fetchInitialData]);
+
+  const renderFooter = useCallback(() => {
+    if (!loadingMore) return null;
+    return <ActivityIndicator style={{ marginVertical: 20 }} size="large" />;
+  }, [loadingMore]);
+
+  // 检查是否需要显示API配置提示
+  // CMS 分类不走这条：agg 地址硬编码直连，不依赖用户服务器；未配服务器时
+  // CMS 内容照样能加载，配置提示不能盖住它（否则动漫/综艺这类无 tags 的
+  // CMS 分类在新装应用上永远显示“请配置服务器地址”，用户以为连不上网）。
+  // 最近播放（本地记录）同样豁免：本地数据不需要服务器配置。
+  const shouldShowApiConfig =
+    apiConfigStatus.needsConfiguration &&
+    selectedCategory &&
+    !selectedCategory.tags &&
+    !selectedCategory.cmsType &&
+    !isRecordCategory;
+
+  // TV端和平板端的顶部导航
+  const renderHeader = () => {
+    if (deviceType === "mobile") {
+      // 移动端不显示顶部导航，使用底部Tab导航
+      return null;
+    }
+
+    return (
+      <View style={dynamicStyles.headerContainer}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <ThemedText style={dynamicStyles.headerTitle}>首页</ThemedText>
+          <Pressable android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }} style={{ marginLeft: 20 }} onPress={() => router.push("/live")}>
+            {({ focused }) => (
+              <ThemedText style={[dynamicStyles.headerTitle, { color: focused ? "white" : "grey" }]}>直播</ThemedText>
+            )}
+          </Pressable>
+        </View>
+        <View style={dynamicStyles.rightHeaderButtons}>
+          <StyledButton style={dynamicStyles.iconButton} onPress={() => router.push("/favorites")} variant="ghost">
+            <Heart color={colorScheme === "dark" ? "white" : "black"} size={24} />
+          </StyledButton>
+          <StyledButton
+            style={dynamicStyles.iconButton}
+            onPress={() => router.push({ pathname: "/search" })}
+            variant="ghost"
+          >
+            <Search color={colorScheme === "dark" ? "white" : "black"} size={24} />
+          </StyledButton>
+          <StyledButton style={dynamicStyles.iconButton} onPress={() => router.push("/settings")} variant="ghost">
+            <Settings color={colorScheme === "dark" ? "white" : "black"} size={24} />
+          </StyledButton>
+          {isLoggedIn && (
+            <StyledButton style={dynamicStyles.iconButton} onPress={logout} variant="ghost">
+              <LogOut color={colorScheme === "dark" ? "white" : "black"} size={24} />
+            </StyledButton>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  // 动态样式
+
 
   const content = (
     <ThemedView style={[commonStyles.container, dynamicStyles.container]}>
