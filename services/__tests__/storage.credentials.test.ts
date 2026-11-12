@@ -68,8 +68,15 @@ describe("LoginCredentialsManager（SecureStore 凭据层）", () => {
     expect(removeItem).toHaveBeenCalledWith(KEY);
   });
 
-  it("clear：SecureStore 抛错时不向外抛（logout 的本地退出不被凭据清除失败阻断）", async () => {
+  it("clear：SecureStore 抛错时 rethrow（调用方 authStore logout 自有 try/catch，本地退出仍不被阻断）", async () => {
     deleteItemAsync.mockRejectedValue(new Error("SecureStore unavailable"));
-    await expect(LoginCredentialsManager.clear()).resolves.toBeUndefined();
+    await expect(LoginCredentialsManager.clear()).rejects.toThrow("SecureStore unavailable");
+  });
+
+  it("save：SecureStore 抛错时 rethrow（调用方 LoginModal 单独提示，不当登录失败）", async () => {
+    setItemAsync.mockRejectedValue(new Error("SecureStore unavailable"));
+    await expect(
+      LoginCredentialsManager.save({ username: "u", password: "p" }),
+    ).rejects.toThrow("SecureStore unavailable");
   });
 });

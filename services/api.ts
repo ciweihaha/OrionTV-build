@@ -397,14 +397,13 @@ export class API {
               throw abortError();
             }
             // 首次 signal 已中止且并非调用方取消，只能是超时：换一个新的组合
-            // signal 重试（同样受超时与调用方取消联动），避免重试直接失败
-            let retrySignal = first.signal;
-            let retryCleanup: (() => void) | null = null;
-            if (first.signal.aborted) {
-              const retry = createLinkedController();
-              retrySignal = retry.signal;
-              retryCleanup = retry.cleanup;
-            }
+            // signal 重试（同样受超时与调用方取消联动），避免重试直接失败。
+            // 注意：即使首次 signal 未中止也不能复用——它的超时计时器从首次
+            // 请求开始就在走，首次请求 + 会话恢复已消耗掉大部分预算，重试
+            // 复用它几乎必然立即超时；每次重试都用全新的计时器。
+            const retry = createLinkedController();
+            const retrySignal = retry.signal;
+            const retryCleanup = retry.cleanup;
             try {
               const retryResponse = await fetch(`${this.baseURL}${url}`, { ...options, signal: retrySignal });
               if (retryResponse.status === 401) {
@@ -415,9 +414,7 @@ export class API {
               }
               return retryResponse;
             } finally {
-              if (retryCleanup) {
-                retryCleanup();
-              }
+              retryCleanup();
             }
           }
         }
@@ -585,11 +582,12 @@ export class API {
     type: "movie" | "tv",
     tag: string,
     pageSize: number = 16,
-    pageStart: number = 0
+    pageStart: number = 0,
+    signal?: AbortSignal
   ): Promise<DoubanResponse> {
     const url = `/api/douban?type=${type}&tag=${encodeURIComponent(tag)}&pageSize=${pageSize}&pageStart=${pageStart}`;
-    const response = await this._fetch(url);
-    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "douban");
+    const response = await this._fetch(url, { signal });
+    return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "douban");
   }
 
   /**
@@ -613,6 +611,9 @@ export class API {
     // 两者可组合；未选的项不拼参数，与无筛选行为一致。
     // 与版本接口无关：本方法只请求 ac=videolist，不碰 oriontv-version。
     filters?: { area?: string; year?: string },
+    // 调用方取消信号：切分类/切筛选后旧请求的结果会被 store 的 isStale 丢弃，
+    // 没必要继续重试（最多 3 次 × 15 秒 + 退避），直接中止省流量与时间。
+    signal?: AbortSignal,
   ): Promise<AggCategoryResponse> {
     const parts = [`ac=videolist`, `t=${t}`, `pg=${pg}`];
     if (filters?.area) parts.push(`area=${encodeURIComponent(filters.area)}`);
@@ -620,11 +621,30 @@ export class API {
     const url = `${AGG_BASE_URL}?${parts.join("&")}`;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (signal?.aborted) {
+        const err = new Error("The user aborted a request.");
+        err.name = "AbortError";
+        throw err;
+      }
       if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // 退避等待期间调用方也可能取消：被取消的请求绝不重试
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 1000);
+          if (signal) {
+            signal.addEventListener("abort", () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+          }
+        });
+        if (signal?.aborted) {
+          const err = new Error("The user aborted a request.");
+          err.name = "AbortError";
+          throw err;
+        }
       }
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API.DEFAULT_TIMEOUT);
+      // 调用方取消 → 中止本次尝试（fetch 与 readJsonLimited 都监听它）
+      const onCallerAbort = () => controller.abort();
+      if (signal) signal.addEventListener("abort", onCallerAbort, { once: true });
       try {
         const response = await fetch(url, {
           signal: controller.signal,
@@ -642,7 +662,10 @@ export class API {
         const data: AggCategoryResponse = await this.readJsonLimited(
           response,
           API.DEFAULT_TIMEOUT,
-          undefined,
+          // 只传调用方信号：本次尝试的 controller 信号带 15 秒 fetch 超时，
+          // 传它会把 fetch 计时器与体读取计时器混成一个（fetch 慢了体读取
+          // 就没时间了）；调用方取消仍需传到体读取里。
+          signal,
           "agg",
         );
         if (!data || data.code !== 1 || !Array.isArray(data.list)) {
@@ -650,6 +673,12 @@ export class API {
         }
         return data;
       } catch (e) {
+        // 调用方取消绝不重试
+        if (isCancelError(e)) throw e;
+        // 确定性错误不重试：服务端已给出明确答复（结构异常 / JSON 损坏），
+        // 原样重发同一请求只会得到同一答复，白白多等 2 次 × 15 秒。
+        if (e instanceof Error && e.message === "AGG_INVALID_RESPONSE") throw e;
+        if (e instanceof SyntaxError) throw e;
         // 超时(AbortError)/网络失败(TypeError)/读取异常：链路性质错误，重试
         lastError = e;
         // 熔断已开时别重试：重试还是在 readJsonLimited 里立即抛出来，
@@ -662,6 +691,7 @@ export class API {
         throw e;
       } finally {
         clearTimeout(timeoutId);
+        if (signal) signal.removeEventListener("abort", onCallerAbort);
       }
     }
     throw lastError ?? new Error("AGG_REQUEST_FAILED");

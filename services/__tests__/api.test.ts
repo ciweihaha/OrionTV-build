@@ -101,7 +101,7 @@ describe("API._fetch 取消与 401 重试语义", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("③ 重试阶段取消（复用首次 signal）：在途重试被立即中止，且无第三次请求", async () => {
+  it("③ 重试阶段取消：在途重试被立即中止，且无第三次请求", async () => {
     api.setSessionRestorer(jest.fn(async () => true));
     fetchMock.mockResolvedValueOnce(makeResponse(401)).mockImplementationOnce(pendingUntilAbort);
 
@@ -182,6 +182,50 @@ describe("API._fetch 取消与 401 重试语义", () => {
     const promise = (api as any)._fetch("/api/search?q=x", {}, 30);
     await expect(promise).rejects.toThrow(/^REQUEST_TIMEOUT/);
   });
+
+  it("⑤ 401 重试用全新超时预算：首次请求 + 恢复已耗大半预算，重试仍有完整预算", async () => {
+    // 超时 1000ms：首次 fetch 耗时 800ms 返回 401，恢复耗时 100ms，
+    // 重试 fetch 需 500ms。旧代码复用首次 signal（计时器在 1000ms 触发，
+    // 重试开始时只剩 100ms）→ 重试被超时中止；新代码每次重试都换新
+    // 控制器（完整 1000ms 预算）→ 重试成功。
+    api.setSessionRestorer(
+      jest.fn(async () => {
+        await sleep(100);
+        return true;
+      })
+    );
+    // 信号感知的延迟响应：signal 中止时立即以 AbortError 拒绝（模拟真实 fetch）
+    const delayedResponse = (ms: number, status: number, body: any = {}) => (_url: any, opts: any) =>
+      new Promise((resolve, reject) => {
+        const signal: AbortSignal | undefined = opts?.signal;
+        const timer = setTimeout(() => resolve(makeResponse(status, body)), ms);
+        if (signal) {
+          if (signal.aborted) {
+            clearTimeout(timer);
+            reject(abortError());
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(abortError());
+            },
+            { once: true }
+          );
+        }
+      });
+    fetchMock
+      .mockImplementationOnce(delayedResponse(800, 401))
+      .mockImplementationOnce(delayedResponse(500, 200, { ok: true }));
+
+    const response = await (api as any)._fetch("/api/search?q=x", {}, 1000);
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+    const retrySignal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+    expect(retrySignal).not.toBe(firstSignal);
+  }, 10000);
 });
 
 describe("API.searchVideos 取消", () => {
@@ -506,5 +550,59 @@ describe("API 空响应体不抛 TypeError", () => {
     fetchMock.mockResolvedValue(emptyBodyResponse());
     const res = await api.getResources();
     expect(res).toEqual([]);
+  });
+});
+
+describe("API.getAggCategory 取消与确定性错误（第 4 轮）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("已中止的 signal：直接抛 AbortError，不发请求", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(api.getAggCategory(1, 1, undefined, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("退避期间取消：不发第二次请求", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse(500, {}));
+    const controller = new AbortController();
+    const promise = api.getAggCategory(1, 1, undefined, controller.signal);
+    await waitFor(() => fetchMock.mock.calls.length === 1);
+    // 退避是 1 秒，100ms 后取消
+    await sleep(100);
+    controller.abort();
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  }, 10000);
+
+  it("AGG_INVALID_RESPONSE 不重试：一次即抛", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { code: 0, list: [] }));
+    await expect(api.getAggCategory(1, 1)).rejects.toThrow("AGG_INVALID_RESPONSE");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("JSON 损坏（SyntaxError）不重试：一次即抛", async () => {
+    fetchMock.mockResolvedValue({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      body: undefined,
+      text: async () => "{invalid json",
+    } as unknown as Response);
+    await expect(api.getAggCategory(1, 1)).rejects.toThrow(SyntaxError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
