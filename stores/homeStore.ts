@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, SearchResult, PlayRecord, isCancelError } from "@/services/api";
+import { api, SearchResult, PlayRecord } from "@/services/api";
 import type { AggVideoItem } from "@/services/api";
 import { buildAggFilterParams } from "@/utils/categoryFilters";
 import { PlayRecordManager, parseRecordKey } from "@/services/storage";
@@ -588,8 +588,13 @@ const useHomeStore = create<HomeState>((set, get) => ({
       // 被取消的请求不写 error：同一切换会触发两次 fetchInitialData
       //（selectCategory + index effect），第二次会取消第一次；第一次的
       // AbortError 若写成“加载失败”，第二次成功后 error 还残留，首页
-      // 显示报错屏、内容其实已加载成功
-      if (loadSignal.aborted || isCancelError(err)) return;
+      // 显示报错屏、内容其实已加载成功。
+      // 只看 loadSignal.aborted，不看 isCancelError：getAggCategory 内部
+      // 15 秒超时 abort 也产生 AbortError，与调用方取消同形；加
+      // isCancelError 会把 agg 超时（3 次重试后）也静默吞掉，首屏变
+      // 错误空态、翻页静默停住。调用方取消必然伴随 loadSignal.aborted
+      //（本函数内所有请求都传同一个 loadSignal），单看它已足够。
+      if (loadSignal.aborted) return;
       // 归一化：抛出的不一定是 Error（如字符串），直接读 err.message.includes
       // 会在 catch 块内再抛 TypeError；非 Error 一律按空消息处理，走默认文案
       const msg = err instanceof Error ? err.message : "";
@@ -737,7 +742,17 @@ const useHomeStore = create<HomeState>((set, get) => ({
       }
       return;
     }
-    const records = await PlayRecordManager.getAll();
+    // getAll 失败不抛错：redis 模式下服务端抖动会让它抛错，LoginModal
+    // 把 refreshPlayRecords 放在登录 try 内、凭据保存之前，抛错会被误报
+    // 为“登录失败”且凭据不保存（实际已登录）；首页 useFocusEffect 调它
+    // 也无 .catch。分类同步失败时记日志跳过即可，下次聚焦再试。
+    let records: Awaited<ReturnType<typeof PlayRecordManager.getAll>>;
+    try {
+      records = await PlayRecordManager.getAll();
+    } catch (error) {
+      logger.warn("refreshPlayRecords: failed to load play records", error);
+      return;
+    }
     const hasRecords = Object.keys(records).length > 0;
     set((state) => {
       const recordCategoryExists = state.categories.some((c) => c.type === "record");

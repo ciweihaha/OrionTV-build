@@ -121,6 +121,19 @@ describe("homeStore 无服务器场景（1.2.0 连不上网复现）", () => {
     expect(useHomeStore.getState().error).not.toContain("配置您的服务器地址");
   });
 
+  it("agg 内部超时 AbortError 不被当取消吞掉（第 17 轮 M1，B2 回归）", async () => {
+    // getAggCategory 内部 15 秒超时 abort 也产生 AbortError，与调用方取消
+    // 同形；B2 的 isCancelError 析取项会把它静默吞掉，首屏变错误空态。
+    // 调用方没取消时 loadSignal 未 abort，超时错误必须写出来。
+    const abortError = new Error("The user aborted a request.");
+    abortError.name = "AbortError";
+    getAggMock.mockRejectedValue(abortError);
+    selectMovie();
+    await waitFor(() => useHomeStore.getState().error !== null);
+    expect(getDoubanMock).not.toHaveBeenCalled();
+    expect(useHomeStore.getState().error).toBe("加载失败，请重试");
+  });
+
   it("无服务器时 agg 首屏空列表：不回落豆瓣，直接显示空态且无错误", async () => {
     getAggMock.mockResolvedValue(EMPTY);
     selectMovie();
