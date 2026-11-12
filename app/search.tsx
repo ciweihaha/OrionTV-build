@@ -92,6 +92,9 @@ export default function SearchScreen() {
         setError(null);
         try {
           const response = await api.searchVideos(term, controller.signal);
+          // 旧搜索的体读取无法被 abort 中断（RN 无流分支）：A 的体读完时
+          // 用户已搜了 B，旧结果会覆盖新结果。finally 只保 loading，不保结果。
+          if (seq !== searchSeqRef.current) return;
           if (response.results.length > 0) {
             setResults(response.results);
             // 搜索成功后记录历史（V1.5）
@@ -107,6 +110,8 @@ export default function SearchScreen() {
           if (err instanceof Error && err.name === "AbortError") {
             return;
           }
+          // 旧搜索的错误也不写给新搜索：同上，体读取阶段的旧请求取消不掉
+          if (seq !== searchSeqRef.current) return;
           // 把真实原因显示出来，不再统一吞成一句话：超时、未配服务器、登录过期、
           // 服务端报错各有各的提示，方便定位是应用问题还是服务器问题。
           const msg = err instanceof Error ? err.message : "";

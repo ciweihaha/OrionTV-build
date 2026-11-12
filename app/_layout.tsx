@@ -30,7 +30,7 @@ export default function RootLayout() {
   const { loadSettings, remoteInputEnabled, apiBaseUrl } = useSettingsStore();
   const { startServer, stopServer } = useRemoteControlStore();
   const { checkLoginStatus } = useAuthStore();
-  const { checkForUpdate, lastCheckTime } = useUpdateStore();
+  const { checkForUpdate, lastCheckTime, isInitialized } = useUpdateStore();
   const responsiveConfig = useResponsiveLayout();
 
   useEffect(() => {
@@ -58,14 +58,17 @@ export default function RootLayout() {
 
   // 检查更新
   useEffect(() => {
-    if (loaded && UPDATE_CONFIG.AUTO_CHECK && Platform.OS === 'android') {
+    // 等 initUpdateStore 读回 lastCheckTime 再判断：字体加载常先于两次
+    // AsyncStorage 读完成，初始值 0 会让“12 小时内不重复检查”恒真失效，
+    // 每次冷启动都检查一次
+    if (loaded && isInitialized && UPDATE_CONFIG.AUTO_CHECK && Platform.OS === 'android') {
       // 检查是否需要自动检查更新
       const shouldCheck = Date.now() - lastCheckTime > UPDATE_CONFIG.CHECK_INTERVAL;
       if (shouldCheck) {
         checkForUpdate(true); // 静默检查
       }
     }
-  }, [loaded, lastCheckTime, checkForUpdate]);
+  }, [loaded, isInitialized, lastCheckTime, checkForUpdate]);
 
   useEffect(() => {
     // 只有在非手机端才启动远程控制服务器

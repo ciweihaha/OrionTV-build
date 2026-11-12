@@ -24,6 +24,9 @@ interface UpdateState {
   skipVersion: string | null;
   showUpdateModal: boolean;
   isLatestVersion: boolean; // 新增：是否已是最新版本
+  /** initUpdateStore 是否已完成（lastCheckTime 已从存储读回）：完成前
+   * lastCheckTime 是初始值 0，_layout 的间隔判断恒真，12 小时间隔失效 */
+  isInitialized: boolean;
   
   // 操作
   checkForUpdate: (silent?: boolean) => Promise<void>;
@@ -53,6 +56,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   skipVersion: null,
   showUpdateModal: false,
   isLatestVersion: false, // 新增：初始为false
+  isInitialized: false,
 
   // 检查更新
   checkForUpdate: async (silent = false) => {
@@ -62,7 +66,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       // 获取跳过的版本
       const skipVersion = await AsyncStorage.getItem(STORAGE_KEYS.SKIP_VERSION);
       
-      const versionInfo = await updateService.checkVersion();
+      const versionInfo = await updateService.checkVersion(silent);
       const isUpdateAvailable = updateService.isUpdateAvailable(versionInfo.version);
       
       // 如果有更新且不是要跳过的版本
@@ -223,5 +227,9 @@ export const initUpdateStore = async () => {
     });
   } catch (error) {
     logger.error('初始化更新存储失败:', error);
+  } finally {
+    // 读失败也置位：lastCheckTime 保持 0，检查按“从未检查过”跑一次，
+    // 而不是永远等不到初始化、永远不检查
+    useUpdateStore.setState({ isInitialized: true });
   }
 };

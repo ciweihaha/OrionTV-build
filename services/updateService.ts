@@ -57,7 +57,7 @@ class UpdateService {
   /** --------------------------------------------------------------
    *  1️⃣ 远程版本检查（保持不变，只是把 fetch 包装成 async/await）
    * --------------------------------------------------------------- */
-  async checkVersion(): Promise<VersionInfo> {
+  async checkVersion(silent = false): Promise<VersionInfo> {
     for (let attempt = 1; attempt <= UPDATE_MAX_RETRIES; attempt++) {
       try {
         const controller = new AbortController();
@@ -113,11 +113,15 @@ class UpdateService {
         }
         if (e instanceof SyntaxError) isDeterministic = true;
         if (isDeterministic || attempt === UPDATE_MAX_RETRIES) {
-          Toast.show({
-            type: 'error',
-            text1: '检查更新失败',
-            text2: '无法获取版本信息，请检查网络',
-          });
+          // 静默检查（冷启动自动检查）失败不弹 Toast：离线时每次启动都弹
+          // 错误提示是噪音，调用方 updateStore 已记日志并写 error 状态
+          if (!silent) {
+            Toast.show({
+              type: 'error',
+              text1: '检查更新失败',
+              text2: '无法获取版本信息，请检查网络',
+            });
+          }
           throw e;
         }
         // 指数退避

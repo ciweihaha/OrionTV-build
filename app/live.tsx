@@ -194,8 +194,10 @@ export default function LiveScreen() {
   const failCountRef = useRef(0);                          // 连续失败计数（坏源跳台）
   const lastChannelRestoredRef = useRef(false);            // 上次频道只恢复一次
   const channelsRef = useRef<Channel[]>([]);               // 数字换台闭包内读最新列表
+  const currentChannelIndexRef = useRef(0);                // 刷新闭包内读最新序号
 
   useEffect(() => { channelsRef.current = channels; }, [channels]);
+  useEffect(() => { currentChannelIndexRef.current = currentChannelIndex; }, [currentChannelIndex]);
 
   // 时钟：30 秒刷新一次（右上角时间 + 节目进度）
   useEffect(() => {
@@ -305,6 +307,9 @@ export default function LiveScreen() {
       if (!m3uUrl) return;
       setIsLoading(true);
       lastChannelRestoredRef.current = false;
+      // step 1 恢复的频道 URL（同步记下）：刷新若在渲染同步 ref 之前完成，
+      // currentChannelIndexRef/channelsRef 还是旧值，靠它重定位
+      let restoredUrl: string | null = null;
 
       // 1) 缓存优先（内存 → 磁盘）：有缓存先渲染，直播页秒开
       const cached = await getCachedM3u(m3uUrl);
@@ -317,6 +322,7 @@ export default function LiveScreen() {
           const last = await LiveChannelPrefsManager.getLastChannel();
           const idx = last ? cached.findIndex((c) => c.url === last.url) : -1;
           if (idx >= 0) {
+            restoredUrl = cached[idx].url;
             setCurrentChannelIndex(idx);
           }
         }
@@ -333,6 +339,20 @@ export default function LiveScreen() {
           const idx = last ? fresh.findIndex((c) => c.url === last.url) : -1;
           if (idx >= 0) {
             setCurrentChannelIndex(idx);
+          }
+        } else {
+          // 缓存已恢复过上次频道：刷新返回的列表可能重排/增删，旧序号会
+          // 指向另一个台。按当前频道 URL 在新列表里重定位，找不到时钳制。
+          // ref 优先（反映刷新期间用户切台），ref 未同步时用 step 1 记下的 URL。
+          const currentUrl =
+            channelsRef.current[currentChannelIndexRef.current]?.url ?? restoredUrl;
+          if (currentUrl) {
+            const newIdx = fresh.findIndex((c) => c.url === currentUrl);
+            setCurrentChannelIndex(
+              newIdx >= 0
+                ? newIdx
+                : Math.min(Math.max(0, currentChannelIndexRef.current), fresh.length - 1),
+            );
           }
         }
       } else if (cached.length === 0) {

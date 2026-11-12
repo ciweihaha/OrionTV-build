@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import Toast from "react-native-toast-message";
 import updateService from "../updateService";
 
 /**
@@ -195,10 +196,12 @@ describe("UpdateService.checkVersion 确定性错误不重试（第 4 轮）", (
   beforeEach(() => {
     fetchMock = jest.fn();
     (global as any).fetch = fetchMock;
+    jest.spyOn(Toast, "show").mockImplementation(() => {});
   });
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it("版本文件缺 version 字段：一次即抛，不重试 3 次", async () => {
@@ -217,6 +220,18 @@ describe("UpdateService.checkVersion 确定性错误不重试（第 4 轮）", (
     fetchMock.mockResolvedValue(mockFetchResponse(200, JSON.stringify({ version: "not-a-version" })));
     await expect(updateService.checkVersion()).rejects.toThrow("Invalid version format");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("静默检查失败不弹 Toast（第 16 轮 L4），手动检查失败弹 Toast", async () => {
+    fetchMock.mockResolvedValue(mockFetchResponse(404, "not found"));
+    await expect(updateService.checkVersion(true)).rejects.toThrow("HTTP 404");
+    expect(Toast.show).not.toHaveBeenCalled();
+
+    await expect(updateService.checkVersion(false)).rejects.toThrow("HTTP 404");
+    expect(Toast.show).toHaveBeenCalledTimes(1);
+    expect(Toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "error", text1: "检查更新失败" }),
+    );
   });
 });
 
