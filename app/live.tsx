@@ -192,6 +192,7 @@ export default function LiveScreen() {
   const digitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const digitBufRef = useRef("");                          // TV 事件闭包内读最新缓冲
   const failCountRef = useRef(0);                          // 连续失败计数（坏源跳台）
+  const autoLineTriesRef = useRef(0);                      // 当前频道自动试过的备用线路数
   const lastChannelRestoredRef = useRef(false);            // 上次频道只恢复一次
   const channelsRef = useRef<Channel[]>([]);               // 数字换台闭包内读最新列表
   const currentChannelIndexRef = useRef(0);                // 刷新闭包内读最新序号
@@ -433,6 +434,7 @@ export default function LiveScreen() {
       setRetrySeq((s) => s + 1);
     } else {
       setCurrentUrlIdx(0); // 换台回到主线路
+      autoLineTriesRef.current = 0; // 新频道重新计备用线路尝试
     }
     setCurrentChannelIndex(index);
     // 只有手动换台才清零自动跳台计数：自动跳台走同一条路，清零会让
@@ -471,6 +473,7 @@ export default function LiveScreen() {
     const delta = direction === "next" ? 1 : -1;
     setCurrentUrlIdx((prev) => (prev + delta + ch.urls.length) % ch.urls.length);
     failCountRef.current = 0;
+    autoLineTriesRef.current = 0; // 手动切了新线路，自动备用尝试重新计
     showChannelTempBar();
   }, [channels, currentChannelIndex, showChannelTempBar]);
 
@@ -551,6 +554,18 @@ export default function LiveScreen() {
       showMessage("信号异常，请重新选择频道");
       return;
     }
+    // 先试同频道备用线路：多线路频道主线路挂掉时直接跳下一频道会丢台。
+    // 不直接调 changeLine——它会把 failCountRef 清零，MAX_AUTO_SKIP 上限
+    // 永远到不了（全是坏源时无限循环）。这里只推进 currentUrlIdx，
+    // failCountRef 继续累积；全部线路试完才跳台。
+    const currentChannel = list[currentChannelIndexRef.current];
+    const urlCount = currentChannel?.urls.length ?? 0;
+    if (urlCount > 1 && autoLineTriesRef.current < urlCount - 1) {
+      autoLineTriesRef.current += 1;
+      setCurrentUrlIdx((prev) => (prev + 1) % urlCount);
+      showMessage(`信号异常，正在尝试备用线路 ${autoLineTriesRef.current + 1}/${urlCount}…`);
+      return;
+    }
     // 先换台（会刷出新台的信息条），再盖上提示消息，用户才能看到原因
     changeChannel("next", true);
     showMessage("信号异常，自动切换下一频道…");
@@ -559,6 +574,7 @@ export default function LiveScreen() {
   const handlePlaybackStatus = useCallback((status: { isLoaded?: boolean; isPlaying?: boolean }) => {
     if (status.isLoaded && status.isPlaying) {
       failCountRef.current = 0; // 播放成功清零
+      autoLineTriesRef.current = 0; // 当前线路可用，备用线路尝试清零
     }
   }, []);
 

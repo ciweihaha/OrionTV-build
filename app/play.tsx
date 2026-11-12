@@ -161,11 +161,20 @@ export default function PlayScreen() {
   // 优化的动态样式 - 使用useMemo避免重复计算
   const dynamicStyles = useMemo(() => createResponsiveStyles(deviceType), [deviceType]);
 
+  // setVideoPlayer 单独 effect：useVideoPlayer 实例会在 replaceAsync 失败
+  // 时重建（useVideoHandlers 注释），若 player 留在下面主 effect 的 deps
+  // 里，重建会触发 cleanup reset() + loadVideo（路由参数集数），用户已
+  // 切到第 5 集会被拉回最初打开的那集。拆开后重建只更新 player 引用，
+  // store 状态（集数/进度）保留，useVideoHandlers 的 player 变更 effect
+  // 负责新实例的就绪/seek。
+  useEffect(() => {
+    setVideoPlayer(player);
+  }, [player, setVideoPlayer]);
+
   useEffect(() => {
     const perfStart = performance.now();
     logger.info(`[PERF] PlayScreen useEffect START - source: ${source}, id: ${id}, title: ${title}`);
 
-    setVideoPlayer(player);
     if (source && id && title) {
       logger.info(`[PERF] Calling loadVideo with episodeIndex: ${episodeIndex}, position: ${position}`);
       loadVideo({ source, id, episodeIndex, position, title });
@@ -180,7 +189,7 @@ export default function PlayScreen() {
       logger.info(`[PERF] PlayScreen unmounting - calling reset()`);
       reset(); // Reset state when component unmounts
     };
-  }, [episodeIndex, source, position, setVideoPlayer, reset, loadVideo, id, title, player]);
+  }, [episodeIndex, source, position, reset, loadVideo, id, title]);
 
   // 优化的屏幕点击处理
   const onScreenPress = useCallback(() => {

@@ -95,6 +95,10 @@ const LoginModal = () => {
   }, []);
 
   const handleLogin = async () => {
+    // 登录请求在飞时再按键盘 Go（密码框 onSubmitEditing 直接调这里，
+    // 绕过按钮的 disabled={isLoading}）会并发两次 api.login，成功后
+    // 免责声明 Alert 弹两次。这里挡住重复提交。
+    if (isLoading) return;
     const isLocalStorage = !serverConfig || serverConfig.StorageType === "localstorage";
     if (!password || (!isLocalStorage && !username)) {
       Toast.show({ type: "error", text1: "请输入用户名和密码" });
