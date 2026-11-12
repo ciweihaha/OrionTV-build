@@ -680,7 +680,10 @@ export class API {
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
     const url = `/api/search/one?q=${encodeURIComponent(query)}&resourceId=${encodeURIComponent(resourceId)}`;
     const response = await this._fetch(url, { signal });
-    const { results } = await this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "search");
+    // 空响应体时 readJsonLimited 返回 null：直接解构会抛 TypeError，
+    // 先取 data 再判空（与 searchVideos 同处修法）。
+    const data = await this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "search");
+    const results = data?.results;
     // 服务端异常时可能返回不含 results 的对象：直接 .filter 会抛 TypeError，
     // 调用方只能看到一条无意义的错误；缺字段就当空结果
     const list = Array.isArray(results) ? results : [];
@@ -715,7 +718,9 @@ export class API {
       }
       try {
         const response = await this._fetch(url, { signal });
-        return this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "resources");
+        // 空响应体时 readJsonLimited 返回 null：调用方直接 .length 会抛
+        // TypeError，缺数据时当空列表（与 searchVideos 同处修法）。
+        return (await this.readJsonLimited(response, API.DEFAULT_TIMEOUT, signal, "resources")) ?? [];
       } catch (e) {
         lastError = e;
         // 调用方取消不重试；只有超时（连接超时 REQUEST_TIMEOUT / 体读取超时

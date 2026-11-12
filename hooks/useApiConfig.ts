@@ -51,13 +51,17 @@ export const useApiConfig = () => {
   useEffect(() => {
     if (!isLoadingServerConfig && isConfigured) {
       if (serverConfig) {
-        setValidationState(prev => ({ ...prev, isValid: true, error: null }));
+        // 校验完成必须把 isValidating 复位：effect 2 在加载开始时把它置 true，
+        // 这里不复位，status.isValidating 永久为真，非 CMS 分类永远显示
+        // “正在验证服务器配置…”转圈（PR #16 L18d 重构删掉直接校验路径后引入的回归）。
+        setValidationState(prev => ({ ...prev, isValidating: false, isValid: true, error: null }));
       } else {
         // store 未拿到配置：原先直接请求能区分的细分错误（Network/timeout/
         // 404/500 等）随直接请求一并取消——store 不暴露失败原因，统一报通用
         // 错误；具体失败原因由 store 的 fetchServerConfig 记在日志里
         setValidationState(prev => ({
           ...prev,
+          isValidating: false,
           isValid: false,
           error: '无法获取服务器配置'
         }));

@@ -261,4 +261,24 @@ describe("HomeScreen 无服务器场景（1.2.0 连不上网复现）", () => {
 
     expect(visibleTitles(root)).not.toContain("无法获取服务器配置");
   }, 30000);
+
+  it("未配服务器时点最近播放（本地记录分类）：不出现配置提示，显示空态而非转圈", async () => {
+    useApiConfigMock.mockReturnValue({
+      isConfigured: false,
+      isValidating: false,
+      isValid: false,
+      error: null,
+      needsConfiguration: true,
+    });
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    const root = renderer.root;
+
+    // 默认分类已被前面的用例切走，先点回“最近播放”
+    expect(pressButtonByLabel(root, "最近播放")).toBe(true);
+    await waitFor(() => visibleTitles(root).includes("该分类下暂无内容"));
+
+    expect(visibleTitles(root)).not.toContain("请点击右上角设置按钮，配置您的服务器地址");
+  }, 30000);
 });
