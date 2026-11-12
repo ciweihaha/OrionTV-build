@@ -1,16 +1,20 @@
-import { Dimensions } from "react-native";
+import { Dimensions, Platform } from "react-native";
 import { DeviceType } from "@/hooks/useResponsiveLayout";
 
 export const DeviceUtils = {
   /**
    * 检测当前设备类型
+   *
+   * 与 hooks/useResponsiveLayout 的 getDeviceType 保持一致（第 6 轮 B14
+   * 的修法）：只有真正的 TV（Platform.isTV）才判 tv，非 TV 设备最高只
+   * 到 tablet。旧逻辑按宽度 >=1024 判 tv，与 useResponsiveLayout 不一致，
+   * 大平板上样式会混用 tv 的触摸目标尺寸与字号缩放。
    */
   getDeviceType(): DeviceType {
-    // if (Platform.isTV) return "tv";
+    if (Platform.isTV) return "tv";
 
     const { width } = Dimensions.get("window");
 
-    if (width >= 1024) return "tv";
     if (width >= 768) return "tablet";
     return "mobile";
   },

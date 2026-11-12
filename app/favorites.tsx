@@ -29,7 +29,9 @@ export default function FavoritesScreen() {
     }, [fetchFavorites])
   );
 
-  const renderItem = ({ item, ref }: { item: Favorite & { key: string }; index: number; ref?: React.Ref<any> }) => {
+  // renderItem 稳定引用：CustomScrollView 已 memo（第 11 轮），内联函数会让
+  // memo 每渲染都失效；只依赖模块单例 api 与纯函数 parseRecordKey，空依赖即可
+  const renderItem = useCallback(({ item, ref }: { item: Favorite & { key: string }; index: number; ref?: React.Ref<any> }) => {
     // key 是 generateKey 拼的 `${source}+${id}`（source/id 里的 '+' 已转义），
     // 用 parseRecordKey 解析（与 stores/homeStore.ts 同一处修法）
     const { source, id } = parseRecordKey(item.key);
@@ -45,7 +47,7 @@ export default function FavoritesScreen() {
         api={api}
       />
     );
-  };
+  }, []);
 
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);

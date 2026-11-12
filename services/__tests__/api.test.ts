@@ -354,6 +354,31 @@ describe("API.getAggCategory 重试语义（第 29 轮）", () => {
     expect(res.list).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   }, 10000);
+
+  it("fetch 超时 AbortError 要重试：调用方未取消时超时是链路错误不是取消", async () => {
+    // 第 13 轮 M1：15 秒超时 abort 也产生 AbortError，旧代码用 isCancelError
+    // 判，直接抛了，重试形同虚设。调用方 signal 未 abort 时应重试。
+    const timeoutErr = new Error("The operation was aborted");
+    timeoutErr.name = "AbortError";
+    fetchMock
+      .mockRejectedValueOnce(timeoutErr)
+      .mockResolvedValueOnce(makeResponse(200, { code: 1, list: [{ id: "1" }] }));
+    const res = await api.getAggCategory(1, 1);
+    expect(res.code).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it("调用方取消不重试：fetch 中 signal 已 abort 时 AbortError 直接抛", async () => {
+    const controller = new AbortController();
+    const cancelErr = new Error("The user aborted a request.");
+    cancelErr.name = "AbortError";
+    fetchMock.mockImplementationOnce(() => {
+      controller.abort();
+      return Promise.reject(cancelErr);
+    });
+    await expect(api.getAggCategory(1, 1, undefined, controller.signal)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("API.logout 登录标记清理（第 30 轮）", () => {

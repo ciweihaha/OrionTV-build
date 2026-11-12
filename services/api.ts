@@ -673,8 +673,11 @@ export class API {
         }
         return data;
       } catch (e) {
-        // 调用方取消绝不重试
-        if (isCancelError(e)) throw e;
+        // 调用方取消绝不重试：只看调用方 signal——本次尝试的 controller
+        // 超时 abort 也产生 AbortError，但那是链路超时，要走下面的重试。
+        // 旧代码用 isCancelError 判，两者混在一起，fetch 超时永远不重试，
+        // 注释里“超时自动重试至多 2 次”成了死代码。
+        if (signal?.aborted) throw e;
         // 确定性错误不重试：服务端已给出明确答复（结构异常 / JSON 损坏），
         // 原样重发同一请求只会得到同一答复，白白多等 2 次 × 15 秒。
         if (e instanceof Error && e.message === "AGG_INVALID_RESPONSE") throw e;

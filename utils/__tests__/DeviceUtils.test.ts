@@ -1,4 +1,4 @@
-import { Dimensions } from "react-native";
+import { Dimensions, Platform } from "react-native";
 import { DeviceUtils } from "../DeviceUtils";
 
 jest.mock("react-native", () => ({
@@ -9,22 +9,31 @@ jest.mock("react-native", () => ({
   // react-native 的 Platform.select / Platform.OS；mock 必须带上
   Platform: {
     OS: "android",
+    isTV: false,
     select: (specifics: Record<string, unknown>) =>
       specifics.android ?? specifics.native ?? specifics.default,
   },
 }));
 
 const mockedDimensions = Dimensions as jest.Mocked<typeof Dimensions>;
+const mockedPlatform = Platform as unknown as { isTV: boolean };
 
 describe("DeviceUtils", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedPlatform.isTV = false;
   });
 
   describe("getDeviceType", () => {
-    it("应该在宽度 >= 1024 时返回 tv", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 2 });
+    it("应该在 Platform.isTV 为 true 时返回 tv", () => {
+      mockedPlatform.isTV = true;
+      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.getDeviceType()).toBe("tv");
+    });
+
+    it("应该在非 TV 宽屏（宽度 >= 1024）时返回 tablet 而非 tv", () => {
+      mockedDimensions.get.mockReturnValue({ width: 1024, height: 768, scale: 2, fontScale: 2 });
+      expect(DeviceUtils.getDeviceType()).toBe("tablet");
     });
 
     it("应该在宽度 >= 768 且 < 1024 时返回 tablet", () => {
@@ -40,6 +49,7 @@ describe("DeviceUtils", () => {
 
   describe("isTV", () => {
     it("应该在 TV 设备上返回 true", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.isTV()).toBe(true);
     });
@@ -81,6 +91,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该在 TV 设备上返回 false", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.supportsTouchInteraction()).toBe(false);
     });
@@ -88,6 +99,7 @@ describe("DeviceUtils", () => {
 
   describe("supportsRemoteControlInteraction", () => {
     it("应该在 TV 设备上返回 true", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.supportsRemoteControlInteraction()).toBe(true);
     });
@@ -110,6 +122,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该为 tv 设备返回 60", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.getMinTouchTargetSize()).toBe(60);
     });
@@ -127,6 +140,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该为 tv 设备返回基础大小 * 1.25", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.getOptimalFontSize(16)).toBe(20);
     });
@@ -144,6 +158,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该为 tv 设备返回基础间距 * 1.5", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.getOptimalSpacing(20)).toBe(30);
     });
@@ -194,6 +209,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该在 tv 设备上返回安全列数", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       // minCardWidth = 160, maxColumns = 1920 / 160 = 12
       expect(DeviceUtils.getSafeColumnCount(15)).toBe(12);
@@ -213,6 +229,7 @@ describe("DeviceUtils", () => {
     });
 
     it("应该为 tv 设备返回基础持续时间 * 1.2", () => {
+      mockedPlatform.isTV = true;
       mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080, scale: 2, fontScale: 2 });
       expect(DeviceUtils.getAnimationDuration(300)).toBe(360);
     });
