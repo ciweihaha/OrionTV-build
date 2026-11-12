@@ -239,7 +239,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
             const fallbackEnd = performance.now();
             logger.info(`[PERF] FALLBACK search END - took ${(fallbackEnd - fallbackStart).toFixed(2)}ms, total results: ${allResults.length}`);
             
-            const filteredResults = allResults.filter(item => item.title === q);
+            const filteredResults = allResults.filter(
+              // 与首选/标准分支一致用归一化比较：严格 === 会把带尾空格/
+              // 大小写差异的唯一匹配项排除，报“未找到”，而同一部片走
+              // 标准分支（deep link）却能找到——同一部片因入口不同时有时无。
+              (item) => item.title && normalizeTitleForMatch(item.title) === normalizeTitleForMatch(q),
+            );
             logger.info(`[FALLBACK] Filtered results: ${filteredResults.length} matches for "${q}"`);
             
             if (filteredResults.length > 0) {
@@ -276,7 +281,14 @@ const useDetailStore = create<DetailState>((set, get) => ({
             logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${allResults.length}`);
             
             if (signal.aborted) return;
-            await processAndSetResults(allResults.filter(item => item.title === q), true);
+            await processAndSetResults(
+              // 与首选/标准分支一致用归一化比较（见回落分支注释）：
+              // 严格 === 会把带空白/大小写差异的其他源排除，详情页源列表变少。
+              allResults.filter(
+                (item) => item.title && normalizeTitleForMatch(item.title) === normalizeTitleForMatch(q),
+              ),
+              true,
+            );
           } catch (backgroundError) {
             // 被取消不算失败，也不记警告日志
             if (signal.aborted || (backgroundError instanceof Error && backgroundError.name === "AbortError")) return;

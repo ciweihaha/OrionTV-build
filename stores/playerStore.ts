@@ -254,7 +254,19 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // 一次读全后复用：PlayRecordManager.get 内部经 getAll 已把本地播放器
       // 设置合并进记录（含 playbackRate），不再单独调 PlayerSettingsManager.get
       // 把播放器设置重读一遍（L18a）
-      const playRecord = await PlayRecordManager.get(validDetail.source, validDetail.id.toString());
+      // 播放记录只提供断点/倍速/片头标记，是非致命数据，单独 try/catch：
+      // redis 模式下服务端抖动会让 get() 抛错（homeStore refreshPlayRecords
+      // 的注释已承认），若与下面的 episodes 映射共用一个 try，抛错会跳过
+      // 写 episodes 的 set()，catch 只清 isLoading——detail 已就绪所以
+      // 播放页的错误分支都不命中，currentEpisode 为 undefined，永久钉死
+      // 在假加载屏上（isLoading 已 false，20s 超时不 arm，无任何提示）。
+      // 读失败时按无记录继续（断点从 0 开始、倍速 1.0），不拖垮整个 loadVideo。
+      let playRecord: PlayRecord | null = null;
+      try {
+        playRecord = await PlayRecordManager.get(validDetail.source, validDetail.id.toString());
+      } catch (recordError) {
+        logger.warn("Failed to load play record, starting from beginning", recordError);
+      }
       const storageEnd = performance.now();
       logger.info(`[PERF] PlayRecordManager.get took ${(storageEnd - storageStart).toFixed(2)}ms`);
       logger.info(`[PERF] Total storage operations took ${(storageEnd - storageStart).toFixed(2)}ms`);

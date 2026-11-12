@@ -462,7 +462,13 @@ export class API {
     // 这里只存一个登录标记位，供 authStore.checkLoginStatus 判断用。
     const result = await this.readJsonLimited(response, API.DEFAULT_TIMEOUT, undefined, "login");
     if (result && result.ok) {
-      await AsyncStorage.setItem("authCookies", "1");
+      try {
+        await AsyncStorage.setItem("authCookies", "1");
+      } catch {
+        // 登录标记写失败不推翻已成功的登录：服务端已登录、cookie 已入 jar，
+        // 这里只存一个标记位；写失败时下次冷启动会重新登录，不应误报
+        // “登录失败”（与 logout 的同款写操作一致，那里已有 try/catch）。
+      }
     }
 
     return result;
