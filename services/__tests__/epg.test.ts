@@ -158,6 +158,46 @@ describe('currentProgrammes', () => {
     expect(currentProgrammes(null, T_0830)).toBeNull();
     expect(currentProgrammes({ id: 'x', name: 'x', programmes: [] }, T_0830)).toBeNull();
   });
+
+  it('第 9 轮：节目乱序时 next 仍是开始最早的那条（一次遍历与 filter+sort 同义）', () => {
+    // 故意乱序：10:00 的在 09:00 前面
+    const shuffled = {
+      id: 'x',
+      name: 'x',
+      programmes: [
+        { title: '午间节目', startAt: Date.UTC(2026, 10, 12, 2, 0, 0), endAt: Date.UTC(2026, 10, 12, 2, 30, 0) },
+        { title: '朝闻天下', startAt: Date.UTC(2026, 10, 12, 0, 0, 0), endAt: Date.UTC(2026, 10, 12, 1, 0, 0) },
+        { title: '新闻直播间', startAt: Date.UTC(2026, 10, 12, 1, 0, 0), endAt: Date.UTC(2026, 10, 12, 2, 0, 0) },
+      ],
+    };
+    const cur = currentProgrammes(shuffled, T_0830);
+    expect(cur?.now?.title).toBe('朝闻天下');
+    expect(cur?.next?.title).toBe('新闻直播间');
+  });
+});
+
+describe('findEpgForChannel 第 9 轮（WeakMap 索引）', () => {
+  it('同名归一化冲突时返回第一个（与线性扫描一致）', () => {
+    const data = {
+      channels: {
+        a: { id: 'a', name: 'CCTV-1', programmes: [] },
+        b: { id: 'b', name: 'CCTV 1', programmes: [] },
+      },
+    };
+    // 'CCTV-1' 与 'CCTV 1' 归一化后都是 'cctv1'，线性扫描返回先出现的 a
+    expect(findEpgForChannel(data as any, '', 'CCTV1')?.id).toBe('a');
+    // 第二次查走索引缓存，结果一致
+    expect(findEpgForChannel(data as any, '', 'CCTV1')?.id).toBe('a');
+  });
+
+  it('按 id 归一化匹配也走索引', () => {
+    const data = {
+      channels: {
+        'cctv-1': { id: 'cctv-1', name: '综合频道', programmes: [] },
+      },
+    };
+    expect(findEpgForChannel(data as any, '', 'CCTV1')?.id).toBe('cctv-1');
+  });
 });
 
 describe('programmeProgress', () => {

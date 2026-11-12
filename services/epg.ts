@@ -165,6 +165,28 @@ function normalizeChannelName(name: string): string {
   return name.replace(/[\s\-_]/g, '').toLowerCase();
 }
 
+// 规范化名索引：epgNowById 每 30 秒对每个频道调一次 findEpgForChannel，
+// 无 tvgId 匹配时要线性扫全部 EPG 频道且每个都 normalize 两次；
+// EpgData 对象在刷新前不变，用 WeakMap 按对象缓存索引，慢路径变 O(1)。
+// （首个匹配优先：与原来线性扫描返回第一个的语义一致；EpgData 被替换
+// 后旧索引随对象一起被 GC，不用手动失效。）
+const epgNameIndexCache = new WeakMap<EpgData, Map<string, EpgChannel>>();
+
+function getEpgNameIndex(epg: EpgData): Map<string, EpgChannel> {
+  let index = epgNameIndexCache.get(epg);
+  if (!index) {
+    index = new Map<string, EpgChannel>();
+    for (const ch of Object.values(epg.channels)) {
+      const byName = normalizeChannelName(ch.name);
+      if (byName && !index.has(byName)) index.set(byName, ch);
+      const byId = normalizeChannelName(ch.id);
+      if (byId && !index.has(byId)) index.set(byId, ch);
+    }
+    epgNameIndexCache.set(epg, index);
+  }
+  return index;
+}
+
 /**
  * 找频道的节目单：先按 tvg-id 精确匹配（直播源与节目单是同一套 id，
  * 55 个台全对得上）；没有 tvg-id 或对不上时按归一化后的名字匹配
@@ -179,12 +201,7 @@ export function findEpgForChannel(
   if (tvgId && epg.channels[tvgId]) return epg.channels[tvgId];
   const wanted = normalizeChannelName(name);
   if (!wanted) return null;
-  for (const ch of Object.values(epg.channels)) {
-    if (normalizeChannelName(ch.name) === wanted || normalizeChannelName(ch.id) === wanted) {
-      return ch;
-    }
-  }
-  return null;
+  return getEpgNameIndex(epg).get(wanted) ?? null;
 }
 
 /**
@@ -197,20 +214,27 @@ export function currentProgrammes(
   now: number = Date.now(),
 ): CurrentProgrammes | null {
   if (!channel || channel.programmes.length === 0) return null;
+  // 找“最早开始”的节目：一次遍历取 startAt 最小值，不用 filter+sort
+  // （原来每次调用都分配两个数组再排序；epgNowById 每 30 秒对每个频道
+  // 调一次，频道多时开销可观；语义与 filter+sort 取 [0] 完全一致）。
+  const earliestAfter = (minStart: number, strict: boolean): EpgProgramme | null => {
+    let best: EpgProgramme | null = null;
+    for (const p of channel.programmes) {
+      const after = strict ? p.startAt > minStart : p.startAt >= minStart;
+      if (after && (!best || p.startAt < best.startAt)) best = p;
+    }
+    return best;
+  };
   const index = channel.programmes.findIndex((p) => p.startAt <= now && now < p.endAt);
   if (index >= 0) {
     const current = channel.programmes[index];
     const next =
-      channel.programmes
-        .filter((p) => p.startAt >= current.endAt)
-        .sort((a, b) => a.startAt - b.startAt)[0] ??
-      channel.programmes.filter((p) => p.startAt > now).sort((a, b) => a.startAt - b.startAt)[0] ??
+      earliestAfter(current.endAt, false) ??
+      earliestAfter(now, true) ??
       null;
     return { now: current, next };
   }
-  const next =
-    channel.programmes.filter((p) => p.startAt > now).sort((a, b) => a.startAt - b.startAt)[0] ??
-    null;
+  const next = earliestAfter(now, true);
   if (!next) return null;
   return { now: null, next };
 }
