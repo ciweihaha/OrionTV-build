@@ -81,6 +81,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
       error: null,
       allSourcesLoaded: false,
       controller: newController,
+      // 收藏状态先复位：init 末尾的收藏检查是异步的，窗口期内详情页会
+      // 显示上一个视频的爱心状态（从已收藏视频 A 再开未收藏视频 B 时）
+      isFavorited: false,
       // 失败源是按视频记的：不清空的话，视频 A 上失败的源会在整个会话内
       // 对所有其他视频的回落都被排除（M3）
       failedSources: new Set(),
@@ -94,12 +97,20 @@ const useDetailStore = create<DetailState>((set, get) => ({
       // 详情页一直转圈）；清晰度随后逐个补，测出一个更新一个
       if (signal.aborted) return;
 
+      // 归一化：服务端某搜索结果缺 episodes 字段时，渲染层直接读 .length
+      // 会 TypeError 白屏（应用无 ErrorBoundary）。此处统一补 []，下游
+      // 全受益（getNextAvailableSource 的存在性防御说明缺字段是可能发生的）。
+      const normalizedResults: SearchResultWithResolution[] = results.map((r) => ({
+        ...r,
+        episodes: Array.isArray(r.episodes) ? r.episodes : [],
+      }));
+
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        const newResults = results.filter((r) => !existingSources.has(r.source));
+        const newResults = normalizedResults.filter((r) => !existingSources.has(r.source));
         const finalResults: SearchResultWithResolution[] = merge
           ? [...state.searchResults, ...newResults]
-          : results;
+          : normalizedResults;
 
         return {
           searchResults: finalResults,
@@ -116,7 +127,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写。
       // 并发上限 5：每个源 1 个 m3u8 检测，源多时全部并行会瞬间占满连接池（L18b）
       void runWithConcurrencyLimit(
-        results.map((searchResult) => async () => {
+        normalizedResults.map((searchResult) => async () => {
           let resolution;
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
@@ -385,7 +396,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
   },
 
   setDetail: async (detail) => {
-    set({ detail });
+    // 先复位：收藏检查是异步的，窗口期内会显示上一个源的爱心状态
+    set({ detail, isFavorited: false });
     const { source, id } = detail;
     const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
     // 切源很快时，旧的收藏检查可能后返回：只给当前仍在显示的详情写，

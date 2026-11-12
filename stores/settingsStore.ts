@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SettingsManager } from "@/services/storage";
+import { SettingsManager, LoginCredentialsManager } from "@/services/storage";
 import { api, ServerConfig } from "@/services/api";
 import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -189,6 +189,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     });
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
       await AsyncStorage.setItem('authCookies', '');
+      // 地址变了，旧服务器的保存凭据必须清掉：不清的话新服务器返回 401
+      // 时 restoreSession 会把旧用户名/密码发往新地址。isLoggedIn 的短暂
+      // 残留由 _layout 的 checkLoginStatus 随后纠正（这里不直接碰 authStore，
+      // authStore 已 import settingsStore，反向 import 会成环）。
+      try {
+        await LoginCredentialsManager.clear();
+      } catch (error) {
+        logger.warn('换服务器时清理旧登录凭据失败:', error);
+      }
     }
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL

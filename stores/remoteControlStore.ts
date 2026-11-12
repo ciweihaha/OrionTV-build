@@ -13,6 +13,9 @@ const logger = Logger.withTag('RemoteControlStore');
 let startingPromise: Promise<void> | null = null;
 /** 启动还没完成时用户就关了远程输入：启动完成后立刻把刚起的服务停掉 */
 let stopRequestedDuringStart = false;
+/** 用户最新意图：开→关→开时，第二次 start 加入的是会被 flag 停掉的
+ * 旧 promise，必须在它结束后按最新意图重起一次，否则开关开着、服务已死 */
+let desiredRunning = false;
 
 interface RemoteControlState {
   isServerRunning: boolean;
@@ -44,10 +47,20 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
   targetPage: null,
 
   startServer: async () => {
+    desiredRunning = true;
     if (get().isServerRunning) {
       return;
     }
     if (startingPromise) {
+      // 启动进行中且已被关过：这个 promise 完成后会被 flag 停掉，加入的
+      // 这次启动必须在它结束后再重起一次（且只在用户最新意图仍是开启时）。
+      if (stopRequestedDuringStart) {
+        return startingPromise.then(() => {
+          if (desiredRunning) {
+            return get().startServer();
+          }
+        });
+      }
       return startingPromise;
     }
     startingPromise = (async () => {
@@ -88,6 +101,7 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
   },
 
   stopServer: () => {
+    desiredRunning = false;
     if (startingPromise) {
       // 启动还没完成：让它完成后立刻停，stop 本身不等启动结果
       stopRequestedDuringStart = true;

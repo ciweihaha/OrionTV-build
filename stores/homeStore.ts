@@ -448,7 +448,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
             dataCache.set(cacheKey, {
               ...existingCache,
               data: mergedData.slice(0, MAX_ITEMS_PER_CACHE),
-              hasMore: nextHasMore,
+              // 截断时 hasMore 必须为 true：缓存只有 40 条却宣称“没有更多”，
+              // 切分类再回来后尾部条目刷不出来，直到缓存过期。保持旧 aggPage
+              // + hasMore=true，下次 loadMore 重取同一页，去重补回截掉的条目。
+              hasMore: truncated ? true : nextHasMore,
               pagecount: result.pagecount,
               aggPage: truncated ? existingCache.aggPage : nextPg,
             });
