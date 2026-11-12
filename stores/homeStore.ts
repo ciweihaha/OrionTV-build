@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, SearchResult, PlayRecord } from "@/services/api";
 import type { AggVideoItem } from "@/services/api";
+import { buildAggFilterParams } from "@/utils/categoryFilters";
 import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
@@ -17,6 +18,8 @@ export type RowItem = (SearchResult | PlayRecord) & {
   sourceName?: string;
   totalEpisodes?: number;
   year?: string;
+  // CMS 项的 vod_area（如 "中国大陆"、"香港"）；豆瓣项与最近播放没有该字段。
+  area?: string;
   rate?: string;
 };
 
@@ -90,6 +93,9 @@ const mapAggItem = (item: AggVideoItem): RowItem => {
     title: item.vod_name,
     poster: item.vod_pic || "",
     year: item.vod_year || "",
+    // vod_area 一并保留：地区筛选虽走服务端参数，卡片数据仍应带全字段，
+    // 后续客户端二次过滤或详情展示可直接用，不必再改映射。
+    area: item.vod_area || "",
     rate: item.vod_douban_score && item.vod_douban_score !== "0.0" ? item.vod_douban_score : "",
     sourceName: item.type_name || "",
   } as unknown as RowItem;
@@ -110,9 +116,11 @@ const CACHE_EXPIRE_TIME = 5 * 60 * 1000; // 5分钟过期
 const MAX_CACHE_SIZE = 10; // 最大缓存容量
 const MAX_ITEMS_PER_CACHE = 40; // 每个缓存最大条目数
 
-const getCacheKey = (category: Category) => {
+const getCacheKey = (category: Category, region?: string | null, year?: string | null) => {
   if (category.cmsType) {
-    return `cms-${category.cmsType}-${category.title}`;
+    // CMS 缓存键必须含筛选值：否则切筛选后命中无筛选的旧缓存，
+    // 列表还是没筛过的数据。
+    return `cms-${category.cmsType}-${category.title}-area:${region || ""}-year:${year || ""}`;
   }
   return `${category.type || 'unknown'}-${category.title}-${category.tag || ''}`;
 };
@@ -132,9 +140,17 @@ interface HomeState {
   aggPage: number;
   hasMore: boolean;
   error: string | null;
+  // CMS 地区 / 年代筛选：null = 全部；只在 CMS 分类下生效。
+  regionFilter: string | null;
+  yearFilter: string | null;
+  // 当前列表是否来自 CMS：CMS 成功加载后 true，回落豆瓣/切分类时 false。
+  // 筛选行只在 true 时渲染（豆瓣数据无地区/年代字段，不假装能筛）。
+  cmsFilterAvailable: boolean;
   fetchInitialData: () => Promise<void>;
   loadMoreData: () => Promise<void>;
   selectCategory: (category: Category) => void;
+  setRegionFilter: (region: string | null) => void;
+  setYearFilter: (year: string | null) => void;
   refreshPlayRecords: () => Promise<void>;
   clearError: () => void;
 }
@@ -146,6 +162,11 @@ const dataCache = new Map<string, CacheItem>();
 // 新分类的加载不能被旧请求的 loadingMore 挡住（旧请求写结果时会被分类校验拦下）。
 let activeLoadCategory: Category | null = null;
 
+// 正在进行的 loadMoreData 属于哪组筛选：切筛选时旧请求可能还在飞，
+// 新筛选的加载不能被旧请求的 loadingMore 挡住（与分类同理）。
+let activeLoadRegion: string | null = null;
+let activeLoadYear: string | null = null;
+
 const useHomeStore = create<HomeState>((set, get) => ({
   categories: initialCategories,
   selectedCategory: initialCategories[0],
@@ -156,17 +177,20 @@ const useHomeStore = create<HomeState>((set, get) => ({
   aggPage: 0,
   hasMore: true,
   error: null,
+  regionFilter: null,
+  yearFilter: null,
+  cmsFilterAvailable: false,
 
   fetchInitialData: async () => {
     const { apiBaseUrl } = useSettingsStore.getState();
     await useAuthStore.getState().checkLoginStatus(apiBaseUrl);
 
-    const { selectedCategory } = get();
-    const cacheKey = getCacheKey(selectedCategory);
+    const { selectedCategory, regionFilter, yearFilter } = get();
+    const cacheKey = getCacheKey(selectedCategory, regionFilter, yearFilter);
 
     // 最近播放不缓存，始终实时获取
     if (selectedCategory.type === 'record') {
-      set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null });
+      set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null, cmsFilterAvailable: false });
       await get().loadMoreData();
       return;
     }
@@ -180,25 +204,36 @@ const useHomeStore = create<HomeState>((set, get) => ({
         pageStart: cachedData.data.length,
         aggPage: selectedCategory.cmsType ? (cachedData.aggPage ?? 1) : 0,
         hasMore: cachedData.hasMore,
-        error: null
+        error: null,
+        // CMS 缓存只由 CMS 成功分支写入，命中即说明数据来自 CMS。
+        cmsFilterAvailable: !!selectedCategory.cmsType,
       });
       return;
     }
 
-    set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null });
+    set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null, cmsFilterAvailable: false });
     await get().loadMoreData();
   },
 
   loadMoreData: async () => {
-    const { selectedCategory, pageStart, aggPage, loadingMore, hasMore } = get();
+    const { selectedCategory, pageStart, aggPage, loadingMore, hasMore, regionFilter, yearFilter } = get();
     if (!hasMore) return;
     // 同一分类的重复加载才挡；切分类后旧请求还在飞时，新分类的加载要放行，
     // 旧请求写结果时会被下面的分类校验拦下，不会写错数据
-    if (loadingMore && activeLoadCategory === selectedCategory) return;
+    if (loadingMore && activeLoadCategory === selectedCategory && activeLoadRegion === regionFilter && activeLoadYear === yearFilter) return;
     // 本次加载归属的分类：每次 await 之后校验，分类变了就丢弃结果，不再写 store
     const loadCategory = selectedCategory;
-    const isStale = () => get().selectedCategory !== loadCategory;
+    // 本次加载归属的筛选值：每次 await 之后连同分类一起校验，
+    // 筛选变了就丢弃结果，不再写 store（与切分类同理）。
+    const loadRegion = regionFilter;
+    const loadYear = yearFilter;
+    const isStale = () =>
+      get().selectedCategory !== loadCategory ||
+      get().regionFilter !== loadRegion ||
+      get().yearFilter !== loadYear;
     activeLoadCategory = selectedCategory;
+    activeLoadRegion = loadRegion;
+    activeLoadYear = loadYear;
 
     if (selectedCategory.cmsType ? aggPage > 0 : pageStart > 0) {
       set({ loadingMore: true });
@@ -264,12 +299,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggPage: 0,
             hasMore: doubanResult.list.length !== 0,
             error: null,
+            // 回落数据是豆瓣项，无地区/年代字段，筛选行隐藏。
+            cmsFilterAvailable: false,
           });
         };
 
         let result;
         try {
-          result = await api.getAggCategory(cmsType, nextPg);
+          result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter));
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
@@ -286,8 +323,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
         }
 
         const newItems = result.list.map(mapAggItem);
-        const cacheKey = getCacheKey(selectedCategory);
-        const nextHasMore = nextPg < result.pagecount;
+        const cacheKey = getCacheKey(selectedCategory, regionFilter, yearFilter);
+        // 筛选后 agg 的 pagecount 是虚值（实测固定 100，与真实可翻页数无关），
+        // 翻页返回空列表时必须停下，否则一直翻一直空。
+        const nextHasMore = newItems.length > 0 && nextPg < result.pagecount;
 
         if (nextPg === 1) {
           for (const [key, value] of dataCache.entries()) {
@@ -312,6 +351,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             pageStart: newItems.length,
             aggPage: 1,
             hasMore: nextHasMore,
+            cmsFilterAvailable: true,
           });
         } else {
           const existingCache = dataCache.get(cacheKey);
@@ -344,6 +384,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               pageStart: state.pageStart + deduped.length,
               aggPage: nextPg,
               hasMore: nextHasMore,
+              cmsFilterAvailable: true,
             };
           });
         }
@@ -465,6 +506,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
     } finally {
       if (activeLoadCategory === loadCategory) {
         activeLoadCategory = null;
+        activeLoadRegion = null;
+        activeLoadYear = null;
       }
       // 分类已变：旧请求的 finally 不能清新分类的 loading/loadingMore，
       // 否则新分类还在加载，首页会先闪一下“暂无内容”
@@ -488,6 +531,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
         aggPage: 0,
         hasMore: true,
         error: null,
+        // 切分类时筛选回到全部，不把上个分类的筛选带过来。
+        regionFilter: null,
+        yearFilter: null,
+        cmsFilterAvailable: false,
       });
 
       if (category.type === 'record') {
@@ -502,7 +549,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
           pageStart: cachedData.data.length,
           aggPage: category.cmsType ? (cachedData.aggPage ?? 1) : 0,
           hasMore: cachedData.hasMore,
-          loading: false
+          loading: false,
+          cmsFilterAvailable: category.cmsType ? true : false,
         });
       } else {
         // 删除过期缓存
@@ -512,6 +560,24 @@ const useHomeStore = create<HomeState>((set, get) => ({
         get().fetchInitialData();
       }
     }
+  },
+
+  // 切筛选：值没变或不在 CMS 分类下不做事；否则记下新值并重拉首屏。
+  // fetchInitialData 会按含筛选值的新缓存键查缓存，命中则直接用缓存。
+  setRegionFilter: (region: string | null) => {
+    const { regionFilter, selectedCategory } = get();
+    if (region === regionFilter) return;
+    if (!selectedCategory?.cmsType) return;
+    set({ regionFilter: region });
+    get().fetchInitialData();
+  },
+
+  setYearFilter: (year: string | null) => {
+    const { yearFilter, selectedCategory } = get();
+    if (year === yearFilter) return;
+    if (!selectedCategory?.cmsType) return;
+    set({ yearFilter: year });
+    get().fetchInitialData();
   },
 
   refreshPlayRecords: async () => {

@@ -16,6 +16,7 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
+import { REGION_OPTIONS, getYearOptions } from "@/utils/categoryFilters";
 
 const LOAD_MORE_THRESHOLD = 200;
 
@@ -38,9 +39,14 @@ export default function HomeScreen() {
     loading,
     loadingMore,
     error,
+    regionFilter,
+    yearFilter,
+    cmsFilterAvailable,
     fetchInitialData,
     loadMoreData,
     selectCategory,
+    setRegionFilter,
+    setYearFilter,
     refreshPlayRecords,
     clearError,
   } = useHomeStore();
@@ -163,6 +169,9 @@ export default function HomeScreen() {
   };
 
   const isCmsCategory = !!selectedCategory?.cmsType;
+
+  // 年代选项：全部 + 当前年份往回 6 年，首屏算一次即可（跨年需重进应用才更新）。
+  const yearOptions = React.useMemo(() => getYearOptions(), []);
 
   const renderCategory = ({ item }: { item: Category }) => {
     const isSelected = selectedCategory?.title === item.title;
@@ -298,6 +307,21 @@ export default function HomeScreen() {
       // ThemedText 默认行高 24*scale（TV 上 46px），分类字看着巨大还往下顶
       lineHeight: 22,
     },
+    // 筛选行：左侧固定标签 + 右侧横向选项列表
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    filterLabel: {
+      fontSize: deviceType === "mobile" ? 14 : 16,
+      fontWeight: "500",
+      lineHeight: 22,
+      color: "grey",
+      paddingLeft: spacing,
+    },
+    filterList: {
+      flex: 1,
+    },
     contentContainer: {
       flex: 1,
     },
@@ -348,6 +372,58 @@ export default function HomeScreen() {
             contentContainerStyle={dynamicStyles.categoryListContent}
           />
         </View>
+      )}
+
+      {/* 地区 / 年代筛选：仅 CMS 分类且当前数据来自 CMS 时渲染。
+          豆瓣分类与最近播放无地区/年代字段，不渲染；CMS 回落豆瓣时
+          cmsFilterAvailable 为 false，同样隐藏，不假装能筛。
+          地区行首项拿 TV 首选焦点（与豆瓣标签行互斥，不会冲突）。 */}
+      {selectedCategory?.cmsType && cmsFilterAvailable && (
+        <>
+          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
+            <ThemedText style={dynamicStyles.filterLabel}>地区</ThemedText>
+            <FlatList
+              data={REGION_OPTIONS}
+              renderItem={({ item, index }) => (
+                <StyledButton
+                  hasTVPreferredFocus={index === 0}
+                  text={item.label}
+                  onPress={() => setRegionFilter(item.value)}
+                  isSelected={regionFilter === item.value}
+                  style={dynamicStyles.categoryButton}
+                  textStyle={dynamicStyles.categoryText}
+                  variant="ghost"
+                />
+              )}
+              keyExtractor={(item) => `region-${item.label}`}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={dynamicStyles.categoryListContent}
+              style={dynamicStyles.filterList}
+            />
+          </View>
+          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
+            <ThemedText style={dynamicStyles.filterLabel}>年代</ThemedText>
+            <FlatList
+              data={yearOptions}
+              renderItem={({ item }) => (
+                <StyledButton
+                  text={item.label}
+                  onPress={() => setYearFilter(item.value)}
+                  isSelected={yearFilter === item.value}
+                  style={dynamicStyles.categoryButton}
+                  textStyle={dynamicStyles.categoryText}
+                  variant="ghost"
+                />
+              )}
+              keyExtractor={(item) => `year-${item.label}`}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={dynamicStyles.categoryListContent}
+              style={dynamicStyles.filterList}
+            />
+          </View>
+        </>
       )}
 
       {/* 内容网格 */}
