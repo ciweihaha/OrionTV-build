@@ -192,7 +192,7 @@ export default function LiveScreen() {
   const digitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const digitBufRef = useRef("");                          // TV 事件闭包内读最新缓冲
   const failCountRef = useRef(0);                          // 连续失败计数（坏源跳台）
-  const autoLineTriesRef = useRef(0);                      // 当前频道自动试过的备用线路数
+  const triedLinesRef = useRef<Set<number>>(new Set());  // 本轮自动备用已试过的线路下标
   const lastChannelRestoredRef = useRef(false);            // 上次频道只恢复一次
   const channelsRef = useRef<Channel[]>([]);               // 数字换台闭包内读最新列表
   const currentChannelIndexRef = useRef(0);                // 刷新闭包内读最新序号
@@ -434,7 +434,7 @@ export default function LiveScreen() {
       setRetrySeq((s) => s + 1);
     } else {
       setCurrentUrlIdx(0); // 换台回到主线路
-      autoLineTriesRef.current = 0; // 新频道重新计备用线路尝试
+      triedLinesRef.current.clear(); // 新频道：已试线路集合清空
     }
     setCurrentChannelIndex(index);
     // 只有手动换台才清零自动跳台计数：自动跳台走同一条路，清零会让
@@ -473,7 +473,7 @@ export default function LiveScreen() {
     const delta = direction === "next" ? 1 : -1;
     setCurrentUrlIdx((prev) => (prev + delta + ch.urls.length) % ch.urls.length);
     failCountRef.current = 0;
-    autoLineTriesRef.current = 0; // 手动切了新线路，自动备用尝试重新计
+    triedLinesRef.current.clear(); // 手动切了新线路，自动备用尝试重新计
     showChannelTempBar();
   }, [channels, currentChannelIndex, showChannelTempBar]);
 
@@ -558,23 +558,32 @@ export default function LiveScreen() {
     // 不直接调 changeLine——它会把 failCountRef 清零，MAX_AUTO_SKIP 上限
     // 永远到不了（全是坏源时无限循环）。这里只推进 currentUrlIdx，
     // failCountRef 继续累积；全部线路试完才跳台。
+    // 用集合记已试线路（不用计数器）：计数器假设总是从线路 0 起步，
+    // 但播放成功会清零，起步点可能是任意中间线路——从线路 1 起步时
+    // 线路 0 在本轮从未被重试就直接跳台了（它只在数小时前的上一轮失败过）。
     const currentChannel = list[currentChannelIndexRef.current];
     const urlCount = currentChannel?.urls.length ?? 0;
-    if (urlCount > 1 && autoLineTriesRef.current < urlCount - 1) {
-      autoLineTriesRef.current += 1;
-      setCurrentUrlIdx((prev) => (prev + 1) % urlCount);
-      showMessage(`信号异常，正在尝试备用线路 ${autoLineTriesRef.current + 1}/${urlCount}…`);
-      return;
+    if (urlCount > 1) {
+      triedLinesRef.current.add(currentUrlIdx);
+      for (let i = 1; i < urlCount; i++) {
+        const nextIdx = (currentUrlIdx + i) % urlCount;
+        if (!triedLinesRef.current.has(nextIdx)) {
+          setCurrentUrlIdx(nextIdx);
+          showMessage(`信号异常，正在尝试备用线路 ${nextIdx + 1}/${urlCount}…`);
+          return;
+        }
+      }
+      // 全部线路都试过，往下跳台
     }
     // 先换台（会刷出新台的信息条），再盖上提示消息，用户才能看到原因
     changeChannel("next", true);
     showMessage("信号异常，自动切换下一频道…");
-  }, [changeChannel, isPanelVisible, showMessage]);
+  }, [changeChannel, currentUrlIdx, isPanelVisible, showMessage]);
 
   const handlePlaybackStatus = useCallback((status: { isLoaded?: boolean; isPlaying?: boolean }) => {
     if (status.isLoaded && status.isPlaying) {
       failCountRef.current = 0; // 播放成功清零
-      autoLineTriesRef.current = 0; // 当前线路可用，备用线路尝试清零
+      triedLinesRef.current.clear(); // 当前线路可用，已试线路集合清零
     }
   }, []);
 
