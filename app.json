@@ -39,7 +39,8 @@
       ],
       "expo-secure-store",
       "./plugins/withOrionManifest",
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "./plugins/withApkSplits"
     ],
     "experiments": {
       "typedRoutes": true

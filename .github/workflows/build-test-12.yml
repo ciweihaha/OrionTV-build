@@ -119,27 +119,40 @@ jobs:
           ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Verify APK is not debug-signed
+      # Per-ABI splits (plugins/withApkSplits.js) produce
+      # app-universal-release.apk plus app-<abi>-release.apk per ABI:
+      # verify every APK, not just the universal one.
+      - name: Verify APKs are not debug-signed
         run: |
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-          keytool -printcert -jarfile "$APK" > /tmp/apk-cert.txt
-          grep -i 'Owner:' /tmp/apk-cert.txt | head -1
-          if grep -qi 'Android Debug' /tmp/apk-cert.txt; then
-            echo "::error::APK is signed with the Android debug key — release signing did not apply."
-            exit 1
-          fi
-          echo "APK is signed with a non-debug certificate."
+          OUT="android/app/build/outputs/apk/release"
+          ls -la "$OUT"/*.apk
+          for APK in "$OUT"/app*.apk; do
+            keytool -printcert -jarfile "$APK" > /tmp/apk-cert.txt
+            echo "== $APK: $(grep -i 'Owner:' /tmp/apk-cert.txt | head -1)"
+            if grep -qi 'Android Debug' /tmp/apk-cert.txt; then
+              echo "::error::$APK is signed with the Android debug key — release signing did not apply."
+              exit 1
+            fi
+          done
+          echo "All APKs are signed with a non-debug certificate."
 
-      - name: Rename APK file
+      - name: Rename APK files
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/orionTV.1.2.0-test.apk
+          OUT="android/app/build/outputs/apk/release"
+          cp "$OUT/app-universal-release.apk" artifacts/orionTV.1.2.0-test.apk
+          # Fail-closed: a missing split APK means the splits plugin did
+          # not apply — fail here rather than uploading a partial set.
+          for abi in arm64-v8a armeabi-v7a; do
+            cp "$OUT/app-${abi}-release.apk" "artifacts/orionTV.1.2.0-test-${abi}.apk"
+          done
+          ls -la artifacts/
 
-      - name: Generate SHA256 checksum
+      - name: Generate SHA256 checksums
         run: |
           cd artifacts
-          sha256sum orionTV.1.2.0-test.apk > orionTV.1.2.0-test.apk.sha256
-          cat orionTV.1.2.0-test.apk.sha256
+          for f in *.apk; do sha256sum "$f" > "$f.sha256"; done
+          cat *.sha256
 
       - name: Upload test APK artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
