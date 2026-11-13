@@ -10,11 +10,12 @@
 //
 //   splits.abi.include: arm64-v8a + armeabi-v7a only. x86/x86_64 exist
 //   only on emulators; the universal APK below still covers them.
-//   universalApk true: `assembleRelease` still produces the usual
-//   app-release.apk at the usual path, so the release workflow
-//   (build-apk.yml) keeps working unchanged — it uploads the universal
-//   APK. The test workflow (build-test-12.yml) additionally uploads
-//   the per-ABI APKs so their sizes are visible in CI.
+//   universalApk true: `assembleRelease` still produces a universal APK
+//   alongside the per-ABI ones — named app-universal-release.apk (AGP
+//   renames it once splits are enabled; both workflows reference that
+//   name). The release workflow (build-apk.yml) uploads only the
+//   universal APK; the test workflow (build-test-12.yml) additionally
+//   uploads the per-ABI APKs so their sizes are visible in CI.
 //   No per-ABI versionCode override: these APKs are sideloaded, not
 //   served by Play multi-APK delivery, and all variants share the
 //   versionCode from app.json (10700), so a per-ABI build upgrades

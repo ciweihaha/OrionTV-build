@@ -115,9 +115,11 @@ jobs:
           ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       # H1 fail-closed：确认 APK 不是 debug key 签的（证书主题含 Android Debug 即失败）。
+      # 注意：per-ABI splits（plugins/withApkSplits.js）开启后，通用包的文件名是
+      # app-universal-release.apk（不是 app-release.apk）；发版只上传通用包。
       - name: Verify APK is not debug-signed
         run: |
-          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APK="android/app/build/outputs/apk/release/app-universal-release.apk"
           keytool -printcert -jarfile "$APK" > /tmp/apk-cert.txt
           grep -i 'Owner:' /tmp/apk-cert.txt | head -1
           if grep -qi 'Android Debug' /tmp/apk-cert.txt; then
@@ -129,7 +131,7 @@ jobs:
       - name: Rename APK file
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/release/app-release.apk artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
+          cp android/app/build/outputs/apk/release/app-universal-release.apk artifacts/orionTV.${{ steps.package-version.outputs.version }}.apk
 
       - name: Generate SHA256 checksum
         run: |

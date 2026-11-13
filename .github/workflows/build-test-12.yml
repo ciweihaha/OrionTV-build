@@ -119,9 +119,9 @@ jobs:
           ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_ORIONTV_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      # Per-ABI splits (plugins/withApkSplits.js) produce app-release.apk
-      # (universal) plus app-<abi>-release.apk per ABI: verify every APK,
-      # not just the universal one.
+      # Per-ABI splits (plugins/withApkSplits.js) produce
+      # app-universal-release.apk plus app-<abi>-release.apk per ABI:
+      # verify every APK, not just the universal one.
       - name: Verify APKs are not debug-signed
         run: |
           OUT="android/app/build/outputs/apk/release"
@@ -140,7 +140,7 @@ jobs:
         run: |
           mkdir -p artifacts
           OUT="android/app/build/outputs/apk/release"
-          cp "$OUT/app-release.apk" artifacts/orionTV.1.2.0-test.apk
+          cp "$OUT/app-universal-release.apk" artifacts/orionTV.1.2.0-test.apk
           # Fail-closed: a missing split APK means the splits plugin did
           # not apply — fail here rather than uploading a partial set.
           for abi in arm64-v8a armeabi-v7a; do
