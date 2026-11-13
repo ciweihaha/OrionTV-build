@@ -10,6 +10,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
 import { Logger } from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { IMAGE_PLACEHOLDER } from "@/utils/imagePlaceholder";
 
 const logger = Logger.withTag('VideoCardTV');
 
@@ -171,7 +172,10 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
               contentFit="cover"
               transition={200}
               recyclingKey={poster}
-              placeholder={null}
+              // memory-disk：海报原图全尺寸解码再缩到卡片尺寸，滚动时解码与
+              // 内存抖动大；显式缓存策略 + 纯色占位，去白闪
+              cachePolicy="memory-disk"
+              placeholder={IMAGE_PLACEHOLDER}
               accessibilityLabel={title}
             />
             {isFocused && (
