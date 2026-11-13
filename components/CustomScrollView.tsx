@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
-import type { ScrollViewInstance } from "react-native";
+import { View, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -21,6 +20,11 @@ interface CustomScrollViewProps {
   ListFooterComponent?: React.ComponentType<any> | React.ReactElement | null;
 }
 
+// TV 卡片固定几何（VideoCard.tv.tsx：海报 240 + 下方信息区 60）：
+// 行高 = 卡片高 300 + 行间距 spacing（TV 为 16）。getItemLayout 只在 TV
+// 上提供，手机/平板卡片高度随屏宽动态算，不固定，交给 FlatList 实测。
+const TV_CARD_HEIGHT = 300;
+
 const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   data,
   renderItem,
@@ -33,7 +37,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   emptyMessage = "暂无内容",
   ListFooterComponent,
 }) => {
-  const scrollViewRef = useRef<ScrollViewInstance>(null);
+  const flatListRef = useRef<FlatList<any>>(null);
   const firstCardRef = useRef<any>(null); // <--- 新增
   const scrollToTopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 最近一次滚动位置：回到顶部是动画过程，用户中途又滚下去时，
@@ -51,23 +55,16 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       paddingBottom: responsiveConfig.spacing * 2,
       paddingHorizontal: responsiveConfig.spacing / 2,
     },
-    rowContainer: {
-      flexDirection: "row",
+    // FlatList numColumns 下每行是一个 columnWrapper：行间距放这里，
+    // 替代原来 ScrollView 里 rowContainer 的 marginBottom
+    columnWrapper: {
       marginBottom: responsiveConfig.spacing,
     },
-    fullRowContainer: {
-      justifyContent: "space-around",
-      marginRight: responsiveConfig.spacing / 2,
-    },
-    partialRowContainer: {
-      justifyContent: "flex-start",
-    },
-    itemContainer: {
-      width: responsiveConfig.cardWidth,
-    },
-    itemWithMargin: {
-      width: responsiveConfig.cardWidth,
-      marginRight: responsiveConfig.spacing,
+    // 每列等宽 flex:1，卡片在格内居中：与原来 space-around 的铺满效果一致，
+    // 末行不足一列时卡片仍落在各自列位，不挤到左边
+    itemCell: {
+      flex: 1,
+      alignItems: "center",
     },
     scrollToTopButton: {
       position: 'absolute',
@@ -115,25 +112,31 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 
   const handleScroll = useCallback(
     ({ nativeEvent }: { nativeEvent: any }) => {
-      const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-      const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - loadMoreThreshold;
+      const { contentOffset } = nativeEvent;
 
       lastOffsetYRef.current = contentOffset.y;
 
       // 显示/隐藏返回顶部按钮
       setShowScrollToTop(contentOffset.y > 200);
-
-      // 首屏加载时 loadingMore 是 false（第一页不置该标志）：滚动事件会
-      // 在加载中重复触发 onEndReached，造成同一页重复请求；loading 时也挡住
-      if (isCloseToBottom && !loading && !loadingMore && onEndReached) {
-        onEndReached();
-      }
     },
-    [onEndReached, loading, loadingMore, loadMoreThreshold]
+    []
   );
 
+  const handleEndReached = useCallback(() => {
+    // 首屏加载时 loadingMore 是 false（第一页不置该标志）：滚动事件会
+    // 在加载中重复触发 onEndReached，造成同一页重复请求；loading 时也挡住
+    if (!loading && !loadingMore && onEndReached) {
+      onEndReached();
+    }
+  }, [onEndReached, loading, loadingMore]);
+
+  // loadMoreThreshold 是“距底部多少像素触发”（旧 ScrollView 语义）；
+  // FlatList 的 onEndReachedThreshold 是“距底部多少个可视长度”，
+  // 200px 在 1080p 电视上约 0.2 个可视长度
+  const endReachedThreshold = Math.min(0.5, Math.max(0.1, loadMoreThreshold / 1000));
+
   const scrollToTop = () => {
-    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
     // 滚动动画结束后聚焦第一个卡片
     if (scrollToTopTimer.current) {
       clearTimeout(scrollToTopTimer.current);
@@ -145,6 +148,36 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       }
     }, 500); // 500ms 适配大多数动画时长
   };
+
+  // TV 上行高固定，可直接算布局：滚动定位、回顶、翻页都不用等实测。
+  // 手机/平板卡片高度随屏宽变，不提供，FlatList 按需实测。
+  const getItemLayout = useCallback(
+    (_: any, index: number) => {
+      const rowHeight = TV_CARD_HEIGHT + responsiveConfig.spacing;
+      const row = Math.floor(index / effectiveColumns);
+      return { length: rowHeight, offset: rowHeight * row, index };
+    },
+    [effectiveColumns, responsiveConfig.spacing]
+  );
+
+  const renderFlatItem = useCallback(
+    ({ item, index }: { item: any; index: number }) => (
+      <View style={dynamicStyles.itemCell}>
+        {renderItem({ item, index, ref: index === 0 ? firstCardRef : undefined })}
+      </View>
+    ),
+    [renderItem, dynamicStyles]
+  );
+
+  const keyExtractor = useCallback(
+    (item: any, index: number) => {
+      if (item && item.id !== undefined && item.id !== null) {
+        return item.source ? `${item.source}:${item.id}` : String(item.id);
+      }
+      return String(index);
+    },
+    []
+  );
 
   const renderFooter = () => {
     if (ListFooterComponent) {
@@ -188,54 +221,34 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     );
   }
 
-  // 将数据按行分组
-  const groupItemsByRow = (items: any[], columns: number) => {
-    const rows = [];
-    for (let i = 0; i < items.length; i += columns) {
-      rows.push(items.slice(i, i + columns));
-    }
-    return rows;
-  };
-
-  const rows = groupItemsByRow(data, effectiveColumns);
-
-
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        ref={scrollViewRef}
+      <FlatList
+        ref={flatListRef}
+        // 列数变化必须重挂：FlatList 不支持运行时改 numColumns
+        key={effectiveColumns}
+        data={data}
+        renderItem={renderFlatItem}
+        keyExtractor={keyExtractor}
+        numColumns={effectiveColumns}
+        columnWrapperStyle={dynamicStyles.columnWrapper}
         contentContainerStyle={dynamicStyles.listContent}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={responsiveConfig.deviceType !== 'tv'}
-      >
-        {rows.map((row, rowIndex) => {
-          const isFullRow = row.length === effectiveColumns;
-          const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
-
-          return (
-            <View key={rowIndex} style={[dynamicStyles.rowContainer, rowStyle]}>
-              {row.map((item, itemIndex) => {
-                const actualIndex = rowIndex * effectiveColumns + itemIndex;
-                const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
-                const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
-
-                const cardProps = {
-                  style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
-                };
-
-                return (
-                  // key 不能放进 spread（eslint jsx-key 识别不到），直接写在 JSX 上
-                  <View key={actualIndex} {...cardProps}>
-                    {renderItem({ item, index: actualIndex, ref: actualIndex === 0 ? firstCardRef : undefined })}
-                  </View>
-                );
-              })}
-            </View>
-          );
-        })}
-        {renderFooter()}
-      </ScrollView>
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={endReachedThreshold}
+        getItemLayout={deviceType === 'tv' ? getItemLayout : undefined}
+        // 虚拟化：首屏只挂约 20 张卡，窗口外不渲染。原来 ScrollView 全量挂载，
+        // 60 条首屏 = 60 张卡 + 60 张海报同时解码，是首屏卡顿的最大头。
+        initialNumToRender={20}
+        windowSize={10}
+        maxToRenderPerBatch={20}
+        // TV 上不开 removeClippedSubviews：滚动中焦点卡片被裁剪卸载会丢焦点；
+        // 手机/平板无焦点问题，开它省内存。windowSize 虚拟化本身已覆盖大头。
+        removeClippedSubviews={deviceType !== 'tv'}
+        ListFooterComponent={renderFooter()}
+      />
       {deviceType!=='tv' && (
         <TouchableOpacity
           style={dynamicStyles.scrollToTopButton}
