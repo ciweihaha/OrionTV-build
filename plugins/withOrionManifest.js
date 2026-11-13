@@ -20,8 +20,11 @@
 //     (@react-native-tvos/config-tv)
 //   - queries intent for https links (expo-linking)
 //   - deep-link oriontv scheme (app.json intentFilters + scheme)
-//   - ExpoVideoPlaybackService + foreground-service permissions + PiP
-//     (expo-video supportsBackgroundPlayback/supportsPictureInPicture)
+//   - expo-video playback WITHOUT background service / PiP: app.json sets
+//     supportsBackgroundPlayback + supportsPictureInPicture to false, so
+//     no ExpoVideoPlaybackService, foreground-service permissions, or PiP
+//     activity config are injected; playback pauses on background (see
+//     the AppState listeners in app/play.tsx and components/LivePlayer.tsx).
 //   - expo-updates meta-data (Expo)
 // What this plugin adds (Expo doesn't handle it):
 //   - android:usesCleartextTraffic="true": app.json's usesCleartextTraffic

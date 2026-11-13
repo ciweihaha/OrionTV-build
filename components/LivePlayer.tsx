@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Text, ActivityIndicator, AppState, AppStateStatus } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useKeepAwake } from "expo-keep-awake";
 import type { PlaybackStatus } from "@/stores/playerStore";
@@ -34,6 +34,20 @@ export default function LivePlayer({ streamUrl, onPlaybackStatusUpdate, onPlayba
 
   // expo-video player: source changes auto-replace via replaceAsync.
   const player = useVideoPlayer(streamUrl ? { uri: streamUrl } : null);
+
+  // 无后台播放/画中画：切后台或失活时暂停直播，避免后台继续出声
+  // （与 app/play.tsx 的 AppState 兜底一致）。
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === "background" || nextAppState === "inactive") {
+        player.pause();
+      }
+    };
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
+  }, [player]);
 
   const reportErrorOnce = (url: string | null) => {
     if (!url || errorReportedForRef.current === url) return;

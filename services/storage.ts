@@ -54,8 +54,6 @@ export interface AppSettings {
   nextEpisodeOverlayEnabled?: boolean;
   /** 无痕模式：开启后不写入播放记录（默认关闭） */
   incognitoMode?: boolean;
-  /** 后台播放与画中画：切到后台继续播放音频，支持的设备自动进画中画（默认关闭） */
-  backgroundPlayback?: boolean;
 }
 
 export interface LoginCredentials {
@@ -687,7 +685,6 @@ export class SettingsManager {
       introSkipSeconds: 90,
       nextEpisodeOverlayEnabled: true,
       incognitoMode: false,
-      backgroundPlayback: false,
     };
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);

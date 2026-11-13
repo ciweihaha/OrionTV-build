@@ -33,13 +33,14 @@
       [
         "expo-video",
         {
-          "supportsPictureInPicture": true,
-          "supportsBackgroundPlayback": true
+          "supportsPictureInPicture": false,
+          "supportsBackgroundPlayback": false
         }
       ],
       "expo-secure-store",
       "./plugins/withOrionManifest",
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      "./plugins/withAbiSplits"
     ],
     "experiments": {
       "typedRoutes": true
