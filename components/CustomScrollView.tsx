@@ -247,7 +247,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
         // TV 上不开 removeClippedSubviews：滚动中焦点卡片被裁剪卸载会丢焦点；
         // 手机/平板无焦点问题，开它省内存。windowSize 虚拟化本身已覆盖大头。
         removeClippedSubviews={deviceType !== 'tv'}
-        ListFooterComponent={renderFooter()}
+        ListFooterComponent={renderFooter() ?? undefined}
       />
       {deviceType!=='tv' && (
         <TouchableOpacity
