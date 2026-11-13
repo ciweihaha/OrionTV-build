@@ -31,6 +31,7 @@ export default function DetailScreen() {
     allSourcesLoaded,
     init,
     setDetail,
+    probeResolutionForSource,
     abort,
     isFavorited,
     toggleFavorite,
@@ -163,7 +164,12 @@ export default function DetailScreen() {
                 return (
                   <StyledButton
                     key={item.source}
-                    onPress={() => setDetail(item)}
+                    onPress={() => {
+                      setDetail(item);
+                      // 按需测该源清晰度：详情页只给选中源测过，其余源点选时才测，
+                      // 未测时不显示角标，测完自动补上
+                      probeResolutionForSource(item.source);
+                    }}
                     isSelected={isSelected}
                     style={dynamicStyles.sourceButton}
                   >
@@ -256,7 +262,12 @@ export default function DetailScreen() {
                   return (
                     <StyledButton
                       key={item.source}
-                      onPress={() => setDetail(item)}
+                      onPress={() => {
+                        setDetail(item);
+                        // 按需测该源清晰度：详情页只给选中源测过，其余源点选时才测，
+                        // 未测时不显示角标，测完自动补上
+                        probeResolutionForSource(item.source);
+                      }}
                       hasTVPreferredFocus={index === 0}
                       isSelected={isSelected}
                       style={dynamicStyles.sourceButton}
