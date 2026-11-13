@@ -42,6 +42,10 @@ export interface AggCategoryResponse {
 // agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
 const AGG_BASE_URL = "https://ysp.ciweihaha.win/agg";
 
+// getImageSource 的 URL 记忆缓存：海报 URL 总量不大，500 条上限防无界增长
+const IMAGE_SOURCE_CACHE_MAX = 500;
+const imageSourceCache = new Map<string, { uri: string; headers?: Record<string, string> }>();
+
 /**
  * 取消错误识别：不同 fetch 实现的取消错误形状不一样，不能只判 name。
  * - whatwg-fetch / 浏览器：DOMException，name 为 "AbortError"（Hermes 下
@@ -572,16 +576,27 @@ export class API {
     if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.trim()) {
       return { uri: "" };
     }
+    // 按 URL 记忆结果：原来每次卡片重渲染都 new URL() 解析一遍 + 新建
+    // source 对象，纯浪费。海报 URL 总量不大，500 条上限防无界增长。
+    const cached = imageSourceCache.get(imageUrl);
+    if (cached) return cached;
+    let result: { uri: string; headers?: Record<string, string> };
     let hostname = "";
     try {
       hostname = new URL(imageUrl).hostname.toLowerCase();
     } catch {
-      return { uri: imageUrl };
+      result = { uri: imageUrl };
+      imageSourceCache.set(imageUrl, result);
+      return result;
     }
     if (hostname.endsWith(".doubanio.com")) {
-      return { uri: imageUrl, headers: { Referer: "https://movie.douban.com/" } };
+      result = { uri: imageUrl, headers: { Referer: "https://movie.douban.com/" } };
+    } else {
+      result = { uri: imageUrl };
     }
-    return { uri: imageUrl };
+    if (imageSourceCache.size >= IMAGE_SOURCE_CACHE_MAX) imageSourceCache.clear();
+    imageSourceCache.set(imageUrl, result);
+    return result;
   }
 
   async getDoubanData(

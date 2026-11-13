@@ -11,6 +11,9 @@ const logger = Logger.withTag('DetailStore');
 /** 标准搜索与 m3u8 清晰度检测的并发上限：启用源多时全部并行会瞬间打爆服务端/占满连接池 */
 const SEARCH_CONCURRENCY_LIMIT = 5;
 
+// 正在测清晰度的源：用户连续点选同一源时只发一次请求，测完/失败/取消后清掉
+const probingSources = new Set<string>();
+
 /**
  * 带并发上限的任务执行器：按顺序启动任务，同时运行不超过 limit 个，
  * 全部完成后返回结果（与 Promise.all 同语义：任一任务抛错即 reject，
@@ -70,6 +73,9 @@ interface DetailState {
 
   init: (q: string, preferredSource?: string, id?: string) => Promise<void>;
   setDetail: (detail: SearchResultWithResolution) => Promise<void>;
+  // 按需测某源第一集的清晰度：详情页只给当前选中源测，其余源在用户点选时
+  // 再测；未测时不显示清晰度角标，测完再补上
+  probeResolutionForSource: (source: string) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
   markSourceAsFailed: (source: string, reason: string) => void;
@@ -160,33 +166,14 @@ const useDetailStore = create<DetailState>((set, get) => ({
         };
       });
 
-      // 后台逐个测清晰度：不 await，调用方清 loading 不用等它；
-      // 每次写之前都查 signal，换详情/离页后不再往新 init 的 state 里写。
-      // 并发上限 5：每个源 1 个 m3u8 检测，源多时全部并行会瞬间占满连接池（L18b）
-      void runWithConcurrencyLimit(
-        dedupedResults.map((searchResult) => async () => {
-          let resolution;
-          try {
-            if (searchResult.episodes && searchResult.episodes.length > 0) {
-              resolution = await getResolutionFromM3U8(searchResult.episodes[0], signal);
-            }
-          } catch (e) {
-            if ((e as Error).name !== "AbortError") {
-              logger.info(`Failed to get resolution for ${searchResult.source_name}`, e);
-            }
-          }
-          if (signal.aborted || !resolution) return;
-          set((state) => ({
-            searchResults: state.searchResults.map((r) =>
-              r.source === searchResult.source ? { ...r, resolution } : r
-            ),
-            sources: state.sources.map((s) =>
-              s.source === searchResult.source ? { ...s, resolution } : s
-            ),
-          }));
-        }),
-        SEARCH_CONCURRENCY_LIMIT,
-      );
+      // 只测当前选中源的清晰度：用户只播其中一个，原来 10–20 个源全测，
+      // 详情页一打开就多发 10–20 次 m3u8 请求；其余源在用户点选时按需测
+      // （probeResolutionForSource，未测时不显示角标，测完再补上）。
+      // 不 await，调用方清 loading 不用等它。
+      const selectedSource = get().detail?.source ?? dedupedResults[0]?.source;
+      if (selectedSource) {
+        void get().probeResolutionForSource(selectedSource);
+      }
     };
 
     try {
@@ -478,6 +465,35 @@ const useDetailStore = create<DetailState>((set, get) => ({
     // 否则会把上一个源的收藏状态写到新源上
     if (get().detail === detail) {
       set({ isFavorited });
+    }
+  },
+
+  probeResolutionForSource: async (source) => {
+    const { searchResults, controller } = get();
+    const target = searchResults.find((r) => r.source === source);
+    // 已测过、无剧集、或正在测（重复点选）都不再发请求
+    if (!target || target.resolution || !target.episodes || target.episodes.length === 0) return;
+    if (probingSources.has(source)) return;
+    probingSources.add(source);
+    const signal = controller?.signal;
+    try {
+      const resolution = await getResolutionFromM3U8(target.episodes[0], signal);
+      // 换详情/离页后不再往新 init 的 state 里写
+      if (signal?.aborted || !resolution) return;
+      set((state) => ({
+        searchResults: state.searchResults.map((r) =>
+          r.source === source ? { ...r, resolution } : r
+        ),
+        sources: state.sources.map((s) =>
+          s.source === source ? { ...s, resolution } : s
+        ),
+      }));
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        logger.info(`Failed to get resolution for ${target.source_name}`, e);
+      }
+    } finally {
+      probingSources.delete(source);
     }
   },
 

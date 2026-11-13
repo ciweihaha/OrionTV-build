@@ -24,6 +24,11 @@ import { Logger } from '@/utils/Logger';
 
 const logger = Logger.withTag('SearchScreen');
 
+// 搜索结果短 TTL 内存缓存：同一关键词 5 分钟内重复搜直接返回，不再扇出全部源
+const SEARCH_RESULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const SEARCH_RESULT_CACHE_MAX = 50;
+const searchResultCache = new Map<string, { at: number; results: SearchResult[] }>();
+
 export default function SearchScreen() {
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -60,6 +65,16 @@ export default function SearchScreen() {
   // 否则调用方（如果 await）会永远等下去
   const pendingResolveRef = useRef<(() => void) | null>(null);
 
+  // 搜索历史增量更新：add 内部已去重并置顶（最新 20 条），本地 state 直接按
+  // 同一规则拼，不必整份重读（原来 add 后又 get 全量再 set）
+  const recordSearchHistory = useCallback((term: string) => {
+    const t = term.trim();
+    if (!t) return;
+    SearchHistoryManager.add(term)
+      .then(() => setSearchHistory((prev) => [t, ...prev.filter((k) => k !== t)].slice(0, 20)))
+      .catch(() => {});
+  }, []);
+
   const handleSearch = async (searchText?: string) => {
     // 防抖 300ms
     if (searchDebounceTimer.current) {
@@ -94,6 +109,17 @@ export default function SearchScreen() {
         const controller = new AbortController();
         searchAbortController.current = controller;
         const seq = ++searchSeqRef.current;
+        // 缓存命中：同一关键词 5 分钟内重复搜，直接用上次结果，不再扇出全部源
+        const normalizedTerm = term.trim().toLowerCase();
+        const cachedEntry = searchResultCache.get(normalizedTerm);
+        if (cachedEntry && Date.now() - cachedEntry.at < SEARCH_RESULT_CACHE_TTL_MS) {
+          setResults(cachedEntry.results);
+          setError(null);
+          setLoading(false);
+          recordSearchHistory(term);
+          resolve();
+          return;
+        }
         setLoading(true);
         setError(null);
         try {
@@ -103,8 +129,14 @@ export default function SearchScreen() {
           if (seq !== searchSeqRef.current) return;
           if (response.results.length > 0) {
             setResults(response.results);
+            // 记入缓存：Map 按插入顺序排，最老的一条先淘汰
+            if (searchResultCache.size >= SEARCH_RESULT_CACHE_MAX) {
+              const oldest = searchResultCache.keys().next().value;
+              if (oldest !== undefined) searchResultCache.delete(oldest);
+            }
+            searchResultCache.set(normalizedTerm, { at: Date.now(), results: response.results });
             // 搜索成功后记录历史（V1.5）
-            SearchHistoryManager.add(term).then(() => SearchHistoryManager.get()).then(setSearchHistory).catch(() => {});
+            recordSearchHistory(term);
           } else {
             // 空结果也要清掉旧结果，避免下次进搜索时短暂闪出上一轮的旧卡片
             setResults([]);

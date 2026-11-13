@@ -265,6 +265,10 @@ export function programmeProgress(p: EpgProgramme, now: number = Date.now()): nu
 // ---------- EPG 拉取与缓存（与 m3u 同款两级缓存：内存 → 磁盘） ----------
 
 const epgMemCache = new Map<string, EpgData>();
+// 内存缓存的写入时间：磁盘缓存自带 6 小时 TTL（EpgCacheManager.get 已校验），
+// 内存缓存没有，超 6 小时仍会被 getCachedEpg 直接返回——靠这张表判断新鲜度。
+const EPG_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const epgMemCacheTs = new Map<string, number>();
 
 async function fetchAndParseEpg(epgUrl: string): Promise<EpgData | null> {
   const controller = new AbortController();
@@ -297,9 +301,30 @@ export async function getCachedEpg(epgUrl: string): Promise<EpgData | null> {
   const disk = await EpgCacheManager.get(epgUrl);
   if (disk && Object.keys(disk.data.channels).length > 0) {
     epgMemCache.set(epgUrl, disk.data);
+    // 磁盘条目已通过 TTL 校验，写入时间就是它的保存时间
+    epgMemCacheTs.set(epgUrl, disk.ts);
     return disk.data;
   }
   return null;
+}
+
+/**
+ * 内存/磁盘缓存是否还新鲜（6 小时内）：新鲜时调用方跳过 refreshEpg，
+ * 不用每次进直播页都重下 + 全量解析 ~400KB 节目单。
+ * 当天边界：即使在 6 小时内，若缓存已不含当前时刻的节目（跨天后旧文件
+ * 只有昨天的数据），仍视为过期，必须刷新。
+ */
+export function isEpgCacheFresh(epgUrl: string): boolean {
+  const ts = epgMemCacheTs.get(epgUrl);
+  if (ts === undefined || Date.now() - ts >= EPG_CACHE_TTL_MS) return false;
+  const data = epgMemCache.get(epgUrl);
+  if (!data) return false;
+  const now = Date.now();
+  for (const key in data.channels) {
+    const channel = data.channels[key];
+    if (channel.programmes.some((p) => p.endAt > now)) return true;
+  }
+  return false;
 }
 
 /** 从网络刷新节目单并写入两级缓存；失败返回 null（不覆盖旧缓存）。 */
@@ -307,6 +332,7 @@ export async function refreshEpg(epgUrl: string): Promise<EpgData | null> {
   const data = await fetchAndParseEpg(epgUrl);
   if (data && Object.keys(data.channels).length > 0) {
     epgMemCache.set(epgUrl, data);
+    epgMemCacheTs.set(epgUrl, Date.now());
     await EpgCacheManager.save(epgUrl, data);
     return data;
   }
