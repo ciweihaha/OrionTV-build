@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import LivePlayer from "@/components/LivePlayer";
 import { StyledButton } from "@/components/StyledButton";
 import { getPlayableUrl, getCachedM3u, refreshM3u, Channel } from "@/services/m3u";
-import { DEFAULT_EPG_URL, EpgData, getCachedEpg, refreshEpg, findEpgForChannel, currentProgrammes, programmeProgress } from "@/services/epg";
+import { DEFAULT_EPG_URL, EpgData, getCachedEpg, isEpgCacheFresh, refreshEpg, findEpgForChannel, currentProgrammes, programmeProgress } from "@/services/epg";
 import { ThemedView } from "@/components/ThemedView";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -381,6 +381,9 @@ export default function LiveScreen() {
     const loadEpg = async () => {
       const cached = await getCachedEpg(DEFAULT_EPG_URL);
       if (!cancelled && cached) setEpg(cached);
+      // 缓存 6 小时内且仍含当前时刻的节目时跳过刷新：原来每次进直播页
+      // 都无条件重下 + 全量解析整份 ~400KB 节目单，占着 JS 线程
+      if (isEpgCacheFresh(DEFAULT_EPG_URL)) return;
       const fresh = await refreshEpg(DEFAULT_EPG_URL);
       if (!cancelled && fresh) setEpg(fresh);
     };
