@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, forwardRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
 import { View, Text, StyleSheet, Pressable, TouchableOpacity, Alert, Animated } from "react-native";
 import type { ViewInstance } from "react-native";
 import { Image } from "expo-image";
@@ -10,7 +10,6 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
 import { Logger } from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
-import { IMAGE_PLACEHOLDER } from "@/utils/imagePlaceholder";
 
 const logger = Logger.withTag('VideoCardTV');
 
@@ -52,6 +51,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
   ) => {
     const router = useRouter();
     const [isFocused, setIsFocused] = useState(false);
+    const [fadeAnim] = useState(new Animated.Value(0));
 
     // 长按后松手会紧跟着触发一次 onPress：用时间窗挡掉。原来用 sticky 标志，
     // 点“取消”后标志不清，下一次点卡片会被白白吃掉一次
@@ -103,6 +103,15 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
       }).start();
     }, [scale]);
 
+    useEffect(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        delay: Math.random() * 200, // 随机延迟创造交错效果
+        useNativeDriver: true,
+      }).start();
+    }, [fadeAnim]);
+
     const handleLongPress = () => {
       // Only allow long press for items with progress (play records)
       if (progress === undefined) return;
@@ -148,7 +157,7 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;
 
     return (
-      <Animated.View style={[styles.wrapper, animatedStyle]}>
+      <Animated.View style={[styles.wrapper, animatedStyle, { opacity: fadeAnim }]}>
         <Pressable
           ref={ref}
           android_ripple={deviceType === 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
@@ -173,9 +182,9 @@ const VideoCard = forwardRef<ViewInstance, VideoCardProps>(
               transition={200}
               recyclingKey={poster}
               // memory-disk：海报原图全尺寸解码再缩到卡片尺寸，滚动时解码与
-              // 内存抖动大；显式缓存策略 + 纯色占位，去白闪
+              // 内存抖动大，显式缓存策略
               cachePolicy="memory-disk"
-              placeholder={IMAGE_PLACEHOLDER}
+              placeholder={null}
               accessibilityLabel={title}
             />
             {isFocused && (

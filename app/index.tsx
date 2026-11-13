@@ -16,7 +16,6 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
-import { REGION_OPTIONS, getYearOptions } from "@/utils/categoryFilters";
 
 const LOAD_MORE_THRESHOLD = 200;
 
@@ -39,14 +38,9 @@ export default function HomeScreen() {
     loading,
     loadingMore,
     error,
-    regionFilter,
-    yearFilter,
-    cmsFilterAvailable,
     fetchInitialData,
     loadMoreData,
     selectCategory,
-    setRegionFilter,
-    setYearFilter,
     refreshPlayRecords,
     clearError,
   } = useHomeStore();
@@ -182,9 +176,6 @@ export default function HomeScreen() {
   // 最近播放是本地记录分类，同样不依赖服务器配置（与 CMS 同理豁免）。
   const isRecordCategory = selectedCategory?.type === "record";
 
-  // 年代选项：全部 + 当前年份往回 6 年，首屏算一次即可（跨年需重进应用才更新）。
-  const yearOptions = React.useMemo(() => getYearOptions(), []);
-
   // 动态样式只在布局相关值变化时重建：原来每次渲染都 StyleSheet.create
   // 一整套；且 renderCategory 依赖它，不 memo 的话 useCallback 也稳不住。
   const dynamicStyles = React.useMemo(() => StyleSheet.create({
@@ -238,21 +229,6 @@ export default function HomeScreen() {
       fontWeight: "500",
       // ThemedText 默认行高 24*scale（TV 上 46px），分类字看着巨大还往下顶
       lineHeight: 22,
-    },
-    // 筛选行：左侧固定标签 + 右侧横向选项列表
-    filterRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    filterLabel: {
-      fontSize: deviceType === "mobile" ? 14 : 16,
-      fontWeight: "500",
-      lineHeight: 22,
-      color: "grey",
-      paddingLeft: spacing,
-    },
-    filterList: {
-      flex: 1,
     },
     contentContainer: {
       flex: 1,
@@ -399,58 +375,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* 地区 / 年代筛选：仅 CMS 分类且当前数据来自 CMS 时渲染。
-          豆瓣分类与最近播放无地区/年代字段，不渲染；CMS 回落豆瓣时
-          cmsFilterAvailable 为 false，同样隐藏，不假装能筛。
-          地区行首项拿 TV 首选焦点（与豆瓣标签行互斥，不会冲突）。 */}
-      {selectedCategory?.cmsType && cmsFilterAvailable && (
-        <>
-          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
-            <ThemedText style={dynamicStyles.filterLabel}>地区</ThemedText>
-            <FlatList
-              data={REGION_OPTIONS}
-              renderItem={({ item, index }) => (
-                <StyledButton
-                  hasTVPreferredFocus={index === 0}
-                  text={item.label}
-                  onPress={() => setRegionFilter(item.value)}
-                  isSelected={regionFilter === item.value}
-                  style={dynamicStyles.categoryButton}
-                  textStyle={dynamicStyles.categoryText}
-                  variant="ghost"
-                />
-              )}
-              keyExtractor={(item) => `region-${item.label}`}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={dynamicStyles.categoryListContent}
-              style={dynamicStyles.filterList}
-            />
-          </View>
-          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
-            <ThemedText style={dynamicStyles.filterLabel}>年代</ThemedText>
-            <FlatList
-              data={yearOptions}
-              renderItem={({ item }) => (
-                <StyledButton
-                  text={item.label}
-                  onPress={() => setYearFilter(item.value)}
-                  isSelected={yearFilter === item.value}
-                  style={dynamicStyles.categoryButton}
-                  textStyle={dynamicStyles.categoryText}
-                  variant="ghost"
-                />
-              )}
-              keyExtractor={(item) => `year-${item.label}`}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={dynamicStyles.categoryListContent}
-              style={dynamicStyles.filterList}
-            />
-          </View>
-        </>
-      )}
-
       {/* 内容网格 */}
       {shouldShowApiConfig ? (
         <View style={commonStyles.center}>
@@ -497,16 +421,7 @@ export default function HomeScreen() {
             error={error}
             onEndReached={loadMoreData}
             loadMoreThreshold={LOAD_MORE_THRESHOLD}
-            emptyMessage={
-              isCmsCategory
-                ? // 筛选后 0 条是合法结果（窄组合确实没片）：说清原因，用户才知道换筛选就有。
-                  regionFilter || yearFilter
-                  ? "没有符合筛选条件的内容，换个筛选试试"
-                  : "该分类下暂无内容"
-                : selectedCategory?.tags
-                  ? "请选择一个子分类"
-                  : "该分类下暂无内容"
-            }
+            emptyMessage={isCmsCategory ? "该分类下暂无内容" : (selectedCategory?.tags ? "请选择一个子分类" : "该分类下暂无内容")}
             ListFooterComponent={renderFooter}
           />
         </Animated.View>
