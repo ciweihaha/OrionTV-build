@@ -1,6 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { View, Switch, StyleSheet, Pressable, Platform, TouchableOpacity } from "react-native";
-import { isPictureInPictureSupported } from "expo-video";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -17,15 +16,14 @@ interface PlaybackSectionProps {
 type PlaybackToggleKey =
   | "nextEpisodeOverlayEnabled"
   | "autoSkipIntro"
-  | "incognitoMode"
-  | "backgroundPlayback";
+  | "incognitoMode";
 
 /** 除开关外的可聚焦行：片头时长（点按循环切换档位） */
 type PlaybackOptionKey = "introSkipSeconds";
 type PlaybackFocusKey = PlaybackToggleKey | PlaybackOptionKey;
 
 /**
- * 播放设置：下一集预告 / 自动跳过片头 / 无痕模式 / 后台播放与画中画。
+ * 播放设置：下一集预告 / 自动跳过片头 / 无痕模式。
  * 行交互同时兼容触摸与电视遥控：整行是 Pressable（点按即切换），
  * Switch 只做状态展示（pointerEvents="none"，避免与行点按重复触发）；
  * iOS TV 上 Switch 渲染异常，沿用仓库现有做法改用文字状态按钮。
@@ -40,20 +38,9 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
     setIntroSkipSeconds,
     incognitoMode,
     setIncognitoMode,
-    backgroundPlayback,
-    setBackgroundPlayback,
   } = useSettingsStore();
   const [focusedKey, setFocusedKey] = useState<PlaybackFocusKey | null>(null);
   const deviceType = useResponsiveLayout().deviceType;
-
-  // 画中画是否受当前设备支持（不支持时开关只控制后台音频，优雅降级）。
-  const pipSupported = useMemo(() => {
-    try {
-      return isPictureInPictureSupported();
-    } catch {
-      return false;
-    }
-  }, []);
 
   const toggles: {
     key: PlaybackToggleKey;
@@ -83,15 +70,6 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
       value: incognitoMode,
       setValue: setIncognitoMode,
     },
-    {
-      key: "backgroundPlayback",
-      name: "后台播放与画中画",
-      description: pipSupported
-        ? "切到后台时自动进入画中画并继续播放音频"
-        : "当前设备不支持画中画，开启后切到后台仍可继续播放音频",
-      value: backgroundPlayback,
-      setValue: setBackgroundPlayback,
-    },
   ];
 
   const handleToggle = (key: PlaybackToggleKey) => {
@@ -111,8 +89,8 @@ export const PlaybackSection: React.FC<PlaybackSectionProps> = ({ onChanged, onF
   const introSkipLabel = introSkipSeconds === 0 ? "不跳过" : `${introSkipSeconds}秒`;
 
   // TV 下外层 SettingsSection 不可聚焦：外层 Pressable 一旦可聚焦就会抢走焦点，
-  // 内层 4 行开关永远拿不到焦点、onPress 永远不触发（第 58 轮远程输入行同款问题），
-  // 电视上后台播放/画中画就点不动。非 TV 保持原样（触摸不走焦点）。
+  // 内层开关行永远拿不到焦点、onPress 永远不触发（第 58 轮远程输入行同款问题），
+  // 电视上播放设置就点不动。非 TV 保持原样（触摸不走焦点）。
   // 行聚焦时同步通知页面（外层不再聚焦，section 级 onFocus 在 TV 下不会触发）。
   return (
     <SettingsSection focusable={deviceType !== "tv"} onFocus={onFocus} onBlur={onBlur}>

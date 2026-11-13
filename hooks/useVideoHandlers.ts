@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { VideoPlayer } from 'expo-video';
-import { isPictureInPictureSupported } from 'expo-video';
 import Toast from 'react-native-toast-message';
 import usePlayerStore, { type PlaybackStatus } from '@/stores/playerStore';
 import { Logger } from '@/utils/Logger';
@@ -17,8 +16,6 @@ interface UseVideoHandlersProps {
   deviceType: string;
   /** 片头自动跳过开关（默认开启）；关闭后就绪时不跳到片头结束处，播放中也不自动跳 */
   autoSkipIntro: boolean;
-  /** 后台播放与画中画开关（默认关闭）；关闭时不开启画中画 */
-  backgroundPlayback: boolean;
 }
 
 /**
@@ -36,7 +33,6 @@ export const useVideoHandlers = ({
   handlePlaybackStatusUpdate,
   deviceType,
   autoSkipIntro,
-  backgroundPlayback,
 }: UseVideoHandlersProps) => {
   // Synthesized status, kept in a ref and emitted on every player event.
   const statusRef = useRef<PlaybackStatus>({
@@ -49,15 +45,6 @@ export const useVideoHandlers = ({
   });
   // URL the ready-seek/autoplay already ran for (per source).
   const readyHandledForRef = useRef<string | null>(null);
-
-  // 画中画是否受当前设备支持（不支持时开关只控制后台音频，优雅降级）。
-  const pipSupported = useMemo(() => {
-    try {
-      return isPictureInPictureSupported();
-    } catch {
-      return false;
-    }
-  }, []);
 
   const emit = useCallback(
     (patch: Partial<PlaybackStatus>) => {
@@ -249,10 +236,8 @@ export const useVideoHandlers = ({
       player,
       contentFit: 'contain' as const,
       nativeControls: deviceType !== 'tv',
-      // 画中画：仅在开启后台播放且设备支持时生效（Android 12+ / iOS），
-      // 不支持的设备上 isPictureInPictureSupported() 返回 false，开关只控制后台音频。
-      allowsPictureInPicture: backgroundPlayback && pipSupported,
-      startsPictureInPictureAutomatically: backgroundPlayback && pipSupported,
+      // 无画中画：expo-video 的 allowsPictureInPicture /
+      // startsPictureInPictureAutomatically 默认关闭，这里不开启。
     },
   };
 };

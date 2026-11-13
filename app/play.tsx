@@ -131,7 +131,6 @@ export default function PlayScreen() {
   const loadVideo = usePlayerStore((s) => s.loadVideo);
   const autoSkipIntro = useSettingsStore((s) => s.autoSkipIntro);
   const introSkipSeconds = useSettingsStore((s) => s.introSkipSeconds);
-  const backgroundPlayback = useSettingsStore((s) => s.backgroundPlayback);
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
   // expo-video player: source changes auto-replace; setup sets the
@@ -152,7 +151,6 @@ export default function PlayScreen() {
     handlePlaybackStatusUpdate,
     deviceType,
     autoSkipIntro,
-    backgroundPlayback,
   });
 
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
@@ -200,17 +198,12 @@ export default function PlayScreen() {
     }
   }, [deviceType, tvRemoteHandler, setShowControls, showControls]);
 
-  // 后台播放开关：开启后播放器在切后台时保持活跃（画中画/后台音频继续），
-  // 关闭时恢复默认行为（切后台即暂停，见下方的 AppState 监听）。
-  useEffect(() => {
-    if (player) {
-      player.staysActiveInBackground = backgroundPlayback;
-    }
-  }, [player, backgroundPlayback]);
-
+  // 无后台播放/画中画：切后台或失活时一律暂停，不留后台音频。
+  // （expo-video 的 supportsBackgroundPlayback / supportsPictureInPicture
+  // 在 app.json 里已关，播放服务不会注册；这里是显式兜底。）
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if ((nextAppState === "background" || nextAppState === "inactive") && !backgroundPlayback) {
+      if (nextAppState === "background" || nextAppState === "inactive") {
         player.pause();
       }
     };
@@ -220,7 +213,7 @@ export default function PlayScreen() {
     return () => {
       subscription.remove();
     };
-  }, [player, backgroundPlayback]);
+  }, [player]);
 
   useEffect(() => {
     const backAction = () => {

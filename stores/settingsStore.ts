@@ -31,7 +31,6 @@ interface SettingsState {
   introSkipSeconds: number;
   nextEpisodeOverlayEnabled: boolean;
   incognitoMode: boolean;
-  backgroundPlayback: boolean;
   videoSource: {
     enabledAll: boolean;
     sources: {
@@ -50,7 +49,6 @@ interface SettingsState {
   setIntroSkipSeconds: (seconds: number) => void;
   setNextEpisodeOverlayEnabled: (enabled: boolean) => void;
   setIncognitoMode: (enabled: boolean) => void;
-  setBackgroundPlayback: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
   showModal: () => void;
@@ -65,7 +63,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   introSkipSeconds: 90,
   nextEpisodeOverlayEnabled: true,
   incognitoMode: false,
-  backgroundPlayback: false,
   isModalVisible: false,
   serverConfig: null,
   isLoadingServerConfig: false,
@@ -83,7 +80,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       introSkipSeconds: settings.introSkipSeconds ?? 90,
       nextEpisodeOverlayEnabled: settings.nextEpisodeOverlayEnabled ?? true,
       incognitoMode: settings.incognitoMode ?? false,
-      backgroundPlayback: settings.backgroundPlayback ?? false,
       videoSource: settings.videoSource || {
         enabledAll: true,
         sources: {},
@@ -149,10 +145,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setIntroSkipSeconds: (seconds) => set({ introSkipSeconds: seconds }),
   setNextEpisodeOverlayEnabled: (enabled) => set({ nextEpisodeOverlayEnabled: enabled }),
   setIncognitoMode: (enabled) => set({ incognitoMode: enabled }),
-  setBackgroundPlayback: (enabled) => set({ backgroundPlayback: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, autoSkipIntro, introSkipSeconds, nextEpisodeOverlayEnabled, incognitoMode, backgroundPlayback } = get();
+    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource, autoSkipIntro, introSkipSeconds, nextEpisodeOverlayEnabled, incognitoMode } = get();
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
     let processedApiBaseUrl = apiBaseUrl.trim();
@@ -185,7 +180,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       introSkipSeconds,
       nextEpisodeOverlayEnabled,
       incognitoMode,
-      backgroundPlayback,
     });
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
       // 标记清除失败不阻断地址切换：SettingsManager.save 已成功（新地址
