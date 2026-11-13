@@ -10,6 +10,23 @@ import { Logger } from "@/utils/Logger";
 
 const logger = Logger.withTag('HomeStore');
 
+// 上次刷新时的播放记录指纹：条数 + 最新 save_time。记录通常根本没变，
+// 原来每次回首页都全量重读、重解析、重排序并重设 store、重渲染网格。
+// 指纹未变且当前不在“最近播放”分类时，跳过末尾的 fetchInitialData。
+// 指纹是可靠的变化检测：新增/重播都会推高最新 save_time，删任何一条
+// 都会改条数或最新 save_time。
+let lastPlayRecordsFingerprint: string | null = null;
+
+const playRecordsFingerprint = (records: Record<string, PlayRecord>): string => {
+  const keys = Object.keys(records);
+  let latestSaveTime = 0;
+  for (const key of keys) {
+    const t = records[key]?.save_time;
+    if (typeof t === "number" && t > latestSaveTime) latestSaveTime = t;
+  }
+  return `${keys.length}:${latestSaveTime}`;
+};
+
 export type RowItem = (SearchResult | PlayRecord) & {
   id: string;
   source: string;
@@ -754,6 +771,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
       logger.warn("refreshPlayRecords: failed to load play records", error);
       return;
     }
+    // 先算指纹再做分类同步：分类增减本身只取决于“有无记录”，不依赖指纹，
+    // 仍按原逻辑跑；指纹只决定末尾要不要重拉首页数据
+    const fingerprint = playRecordsFingerprint(records);
+    const fingerprintUnchanged = fingerprint === lastPlayRecordsFingerprint;
+    lastPlayRecordsFingerprint = fingerprint;
     const hasRecords = Object.keys(records).length > 0;
     // updater 应为纯函数（同本函数第一分支）：selectCategory（含嵌套 set 与
     // 异步加载）不能在 updater 内调；先算新分类，set 之后再切。另去掉
@@ -771,6 +793,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
       }
     }
 
+    // 记录未变且当前不在“最近播放”分类：不用重拉首页数据，
+    // 免掉一次全量重读 + 重排序 + 重渲染
+    if (fingerprintUnchanged && get().selectedCategory?.type !== "record") {
+      return;
+    }
     get().fetchInitialData().catch((error) => {
       logger.warn("refreshPlayRecords: fetchInitialData failed", error);
     });
