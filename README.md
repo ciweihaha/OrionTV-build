@@ -1,3 +1,10 @@
+⚠️ 已并入 OrionTV-native：本仓库（React Native 旧版）已停止维护，不再发版。
+
+OrionTV 今后只用 Kotlin 原生重写版：https://github.com/ciweihaha/OrionTV-native
+（体积更小、原生播放器、更适配电视；旧版 v1.7.2 的 Release 仍保留在 Releases 里）。
+
+---
+
 # OrionTV 📺
 
 一个基于 React Native TVOS 和 Expo 构建的播放器，旨在提供流畅的视频观看体验。
