@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api, SearchResult, PlayRecord } from "@/services/api";
-import type { AggVideoItem } from "@/services/api";
-import { buildAggFilterParams } from "@/utils/categoryFilters";
+import type { AggVideoItem, AggFilters, ReliableAggFilterGroup } from "@/services/api";
+import { EMPTY_AGG_FILTERS, filterServerReliableGroups } from "@/utils/categoryFilters";
 import { PlayRecordManager, parseRecordKey } from "@/services/storage";
 import { storageConfig } from "@/services/storageConfig";
 import useAuthStore from "./authStore";
@@ -115,7 +115,7 @@ const mapAggItem = (item: AggVideoItem): RowItem => {
     poster: item.vod_pic || "",
     year: item.vod_year || "",
     // vod_area 一并保留：地区筛选虽走服务端参数，卡片数据仍应带全字段，
-    // 后续客户端二次过滤或详情展示可直接用，不必再改映射。
+    // 详情展示可直接用，不必再改映射。
     area: item.vod_area || "",
     rate: item.vod_douban_score && item.vod_douban_score !== "0.0" ? item.vod_douban_score : "",
     sourceName: item.type_name || "",
@@ -131,20 +131,28 @@ interface CacheItem {
   // 仅 CMS 分支用：翻页时从缓存页数继续，不得把缓存的 40 条当成“已加载全部”。
   pagecount?: number;
   aggPage?: number;
+  // 仅 CMS 分支用：服务端下发的筛选选项组（agg filters 字段原样存入），
+  // 缓存命中时一并恢复，筛选面板才有选项可渲染。
+  filterGroups?: ReliableAggFilterGroup[];
 }
 
 const CACHE_EXPIRE_TIME = 5 * 60 * 1000; // 5分钟过期
 const MAX_CACHE_SIZE = 10; // 最大缓存容量
 const MAX_ITEMS_PER_CACHE = 40; // 每个缓存最大条目数
 
-const getCacheKey = (category: Category, region?: string | null, year?: string | null) => {
+const getCacheKey = (category: Category, filters?: AggFilters) => {
   if (category.cmsType) {
-    // CMS 缓存键必须含筛选值：否则切筛选后命中无筛选的旧缓存，
+    // CMS 缓存键必须含全部筛选值：否则切筛选后命中无筛选的旧缓存，
     // 列表还是没筛过的数据。
-    return `cms-${category.cmsType}-${category.title}-area:${region || ""}-year:${year || ""}`;
+    const f = filters || EMPTY_AGG_FILTERS;
+    return `cms-${category.cmsType}-${category.title}-a=${f.area}|y=${f.year}|l=${f.lang}|o=${f.order}`;
   }
   return `${category.type || 'unknown'}-${category.title}-${category.tag || ''}`;
 };
+
+// 把 4 组筛选值拼成一个比对键（供 isStale / activeLoad 判断用）。
+const filtersKey = (f: AggFilters) =>
+  [f.area, f.year, f.lang, f.order].join("|");
 
 const isValidCache = (cacheItem: CacheItem) => {
   return Date.now() - cacheItem.timestamp < CACHE_EXPIRE_TIME;
@@ -161,11 +169,17 @@ interface HomeState {
   aggPage: number;
   hasMore: boolean;
   error: string | null;
-  // CMS 地区 / 年代筛选：null = 全部；只在 CMS 分类下生效。
-  regionFilter: string | null;
-  yearFilter: string | null;
+  // CMS 筛选（agg 下发的 4 组：地区/年代/语言/排序）："" = 全部；
+  // 只在 CMS 分类下生效。
+  aggFilters: AggFilters;
+  // 服务端下发的筛选选项组（agg filters 字段中服务端可靠的 4 组，
+  // cate/score 组已滤掉，供筛选面板渲染）。
+  aggFilterGroups: ReliableAggFilterGroup[];
+  // 筛选面板是否展开：纯 UI 状态，默认 false（收起），与筛选值、缓存、分页无关；
+  // 切分类时重置为 false，选筛选不自动收起。
+  filtersVisible: boolean;
   // 当前列表是否来自 CMS：CMS 成功加载后 true，回落豆瓣/切分类时 false。
-  // 筛选行只在 true 时渲染（豆瓣数据无地区/年代字段，不假装能筛）。
+  // 筛选面板只在 true 时渲染（豆瓣数据无筛选字段，不假装能筛）。
   cmsFilterAvailable: boolean;
   // keepFilterRow：筛选触发的重载传 true——加载期间不把筛选行卸掉，
   // 否则电视上焦点会被抢走，重载完焦点又被 hasTVPreferredFocus 拉回“全部”，
@@ -173,8 +187,11 @@ interface HomeState {
   fetchInitialData: (options?: { keepFilterRow?: boolean }) => Promise<void>;
   loadMoreData: () => Promise<void>;
   selectCategory: (category: Category) => void;
-  setRegionFilter: (region: string | null) => void;
-  setYearFilter: (year: string | null) => void;
+  // 切筛选：值没变或不在 CMS 分类下不做事；否则记下新值并重拉首屏。
+  setAggFilter: (key: keyof AggFilters, value: string) => void;
+  clearAggFilters: () => void;
+  toggleFilters: () => void;
+  setFiltersVisible: (visible: boolean) => void;
   refreshPlayRecords: () => Promise<void>;
   clearError: () => void;
 }
@@ -191,8 +208,8 @@ let activeLoadController: AbortController | null = null;
 
 // 正在进行的 loadMoreData 属于哪组筛选：切筛选时旧请求可能还在飞，
 // 新筛选的加载不能被旧请求的 loadingMore 挡住（与分类同理）。
-let activeLoadRegion: string | null = null;
-let activeLoadYear: string | null = null;
+// 用 4 组筛选值拼成的键比对（见 filtersKey）。
+let activeLoadFiltersKey: string = "";
 
 const useHomeStore = create<HomeState>((set, get) => ({
   categories: initialCategories,
@@ -204,13 +221,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
   aggPage: 0,
   hasMore: true,
   error: null,
-  regionFilter: null,
-  yearFilter: null,
+  aggFilters: { ...EMPTY_AGG_FILTERS },
+  aggFilterGroups: [],
+  filtersVisible: false,
   cmsFilterAvailable: false,
 
   fetchInitialData: async (options?: { keepFilterRow?: boolean }) => {
     const { apiBaseUrl } = useSettingsStore.getState();
-    const { selectedCategory, regionFilter, yearFilter } = get();
+    const { selectedCategory, aggFilters } = get();
     // 登录检查只对最近播放串行等（loadMoreData 的 record 分支要读 isLoggedIn）；
     // CMS/豆瓣内容不依赖登录态，串行等会让服务器不可达时的 3×15 秒重试
     // 拖住全部内容加载，改为后台跑（authStore 内有失败缓存与去重）。
@@ -220,7 +238,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       void useAuthStore.getState().checkLoginStatus(apiBaseUrl);
     }
 
-    const cacheKey = getCacheKey(selectedCategory, regionFilter, yearFilter);
+    const cacheKey = getCacheKey(selectedCategory, aggFilters);
 
     // 最近播放不缓存，始终实时获取
     if (selectedCategory.type === 'record') {
@@ -245,6 +263,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
         error: null,
         // CMS 缓存只由 CMS 成功分支写入，命中即说明数据来自 CMS。
         cmsFilterAvailable: !!selectedCategory.cmsType,
+        // 筛选选项组随缓存一并恢复（只保留服务端可靠的 4 组），
+        // 面板才有选项可渲染。
+        aggFilterGroups: filterServerReliableGroups(cachedData.filterGroups ?? []),
       });
       return;
     }
@@ -259,29 +280,27 @@ const useHomeStore = create<HomeState>((set, get) => ({
       hasMore: true,
       error: null,
       cmsFilterAvailable: options?.keepFilterRow ? get().cmsFilterAvailable : false,
+      aggFilterGroups: options?.keepFilterRow ? get().aggFilterGroups : [],
     });
     await get().loadMoreData();
   },
 
   loadMoreData: async () => {
-    const { selectedCategory, pageStart, aggPage, loadingMore, hasMore, regionFilter, yearFilter } = get();
+    const { selectedCategory, pageStart, aggPage, loadingMore, hasMore, aggFilters } = get();
     if (!hasMore) return;
     // 同一分类的重复加载才挡；切分类后旧请求还在飞时，新分类的加载要放行，
     // 旧请求写结果时会被下面的分类校验拦下，不会写错数据
-    if (loadingMore && activeLoadCategory === selectedCategory && activeLoadRegion === regionFilter && activeLoadYear === yearFilter) return;
+    if (loadingMore && activeLoadCategory === selectedCategory && activeLoadFiltersKey === filtersKey(aggFilters)) return;
     // 本次加载归属的分类：每次 await 之后校验，分类变了就丢弃结果，不再写 store
     const loadCategory = selectedCategory;
     // 本次加载归属的筛选值：每次 await 之后连同分类一起校验，
     // 筛选变了就丢弃结果，不再写 store（与切分类同理）。
-    const loadRegion = regionFilter;
-    const loadYear = yearFilter;
+    const loadFilters = aggFilters;
     const isStale = () =>
       get().selectedCategory !== loadCategory ||
-      get().regionFilter !== loadRegion ||
-      get().yearFilter !== loadYear;
+      filtersKey(get().aggFilters) !== filtersKey(loadFilters);
     activeLoadCategory = selectedCategory;
-    activeLoadRegion = loadRegion;
-    activeLoadYear = loadYear;
+    activeLoadFiltersKey = filtersKey(loadFilters);
     // 取消上一次加载的请求（同分类重复加载已被上面的 guard 拦下，走到这里
     // 一定是换了分类/筛选，旧请求的结果注定被 isStale 丢弃）。
     activeLoadController?.abort();
@@ -360,6 +379,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             error: null,
             // 回落数据是豆瓣项，无地区/年代字段，筛选行隐藏。
             cmsFilterAvailable: false,
+            aggFilterGroups: [],
           });
         };
 
@@ -367,7 +387,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
         // 窄组合（如 英国+2020）首屏确实可能 0 条——回落会显示未筛的豆瓣
         // 内容并把 cmsFilterAvailable 置 false 卸掉筛选行，用户看到的就是
         // “点了筛选，列表没变，筛选行还消失了”。无筛选时保持回落。
-        const hasActiveFilter = !!(loadRegion || loadYear);
+        const hasActiveFilter = Object.values(loadFilters).some(Boolean);
 
         // 豆瓣回落走用户服务器的 /api/douban，未配服务器时回落必抛
         // API_URL_NOT_SET，只会把真正的 agg 网络错误掩盖成“请配置服务器地址”。
@@ -376,7 +396,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
         let result;
         try {
-          result = await api.getAggCategory(cmsType, nextPg, buildAggFilterParams(regionFilter, yearFilter), loadSignal);
+          // 筛选全部走服务端：area/year/lang/order 拼进 agg 请求参数，
+          // cate/score 不提供、不拼参数、不做客户端过滤。
+          result = await api.getAggCategory(cmsType, nextPg, loadFilters, loadSignal);
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
@@ -398,6 +420,9 @@ const useHomeStore = create<HomeState>((set, get) => ({
               hasMore: false,
               error: null,
               cmsFilterAvailable: true,
+              // 空列表也保留服务端下发的筛选组（本页无结果不代表选项失效），
+              // 面板不消失，用户可直接改筛选。
+              aggFilterGroups: filterServerReliableGroups(result.filters ?? get().aggFilterGroups),
             });
             return;
           }
@@ -410,6 +435,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               hasMore: false,
               error: null,
               cmsFilterAvailable: false,
+              aggFilterGroups: [],
             });
             return;
           }
@@ -417,8 +443,13 @@ const useHomeStore = create<HomeState>((set, get) => ({
           return;
         }
 
+        // 筛选全部走服务端：列表就是服务端按 area/year/lang/order 筛过的结果，
+        // 不做任何客户端过滤。
         const newItems = result.list.map(mapAggItem);
-        const cacheKey = getCacheKey(selectedCategory, regionFilter, yearFilter);
+        const cacheKey = getCacheKey(selectedCategory, loadFilters);
+        // 服务端下发的筛选选项组：只保留服务端可靠的 4 组（地区/年代/语言/
+        // 排序），cate/score 组不存入、面板不出现；选项不硬编码。
+        const filterGroups = filterServerReliableGroups(result.filters ?? []);
         // 筛选后 agg 的 pagecount 是虚值（实测固定 100，与真实可翻页数无关），
         // 翻页返回空列表时必须停下，否则一直翻一直空。
         const nextHasMore = newItems.length > 0 && nextPg < result.pagecount;
@@ -446,6 +477,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             hasMore: firstPageTruncated ? true : nextHasMore,
             pagecount: result.pagecount,
             aggPage: firstPageTruncated ? 0 : 1,
+            filterGroups,
           });
           set({
             contentData: newItems,
@@ -453,6 +485,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggPage: 1,
             hasMore: nextHasMore,
             cmsFilterAvailable: true,
+            aggFilterGroups: filterGroups,
             error: null,
           });
         } else {
@@ -498,6 +531,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               aggPage: nextPg,
               hasMore: nextHasMore,
               cmsFilterAvailable: true,
+              aggFilterGroups: filterGroups,
               error: null,
             };
           });
@@ -653,8 +687,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       // activeLoadController，被取代的旧请求什么都不清。
       if (activeLoadController === loadController) {
         activeLoadCategory = null;
-        activeLoadRegion = null;
-        activeLoadYear = null;
+        activeLoadFiltersKey = "";
         activeLoadController = null;
         set({ loading: false, loadingMore: false });
       }
@@ -679,9 +712,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
         // 清理；缓存命中路径不发新请求，无人再清 loadingMore，底部转圈
         // 会永久显示——切分类时直接复位。
         loadingMore: false,
-        // 切分类时筛选回到全部，不把上个分类的筛选带过来。
-        regionFilter: null,
-        yearFilter: null,
+        // 切分类时筛选回到全部，不把上个分类的筛选带过来；
+        // 面板收起、选项组清空，等新分类加载成功后再填。
+        aggFilters: { ...EMPTY_AGG_FILTERS },
+        aggFilterGroups: [],
+        filtersVisible: false,
         cmsFilterAvailable: false,
       });
 
@@ -705,6 +740,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           hasMore: cachedData.hasMore,
           loading: false,
           cmsFilterAvailable: category.cmsType ? true : false,
+          aggFilterGroups: filterServerReliableGroups(cachedData.filterGroups ?? []),
         });
       } else {
         // 删除过期缓存
@@ -720,21 +756,29 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
   // 切筛选：值没变或不在 CMS 分类下不做事；否则记下新值并重拉首屏。
   // fetchInitialData 会按含筛选值的新缓存键查缓存，命中则直接用缓存。
-  // 重载带 keepFilterRow：加载期间筛选行不卸，电视焦点不丢。
-  setRegionFilter: (region: string | null) => {
-    const { regionFilter, selectedCategory } = get();
-    if (region === regionFilter) return;
+  // 重载带 keepFilterRow：加载期间筛选面板不卸，电视焦点不丢。
+  setAggFilter: (key: keyof AggFilters, value: string) => {
+    const { aggFilters, selectedCategory } = get();
+    if (aggFilters[key] === value) return;
     if (!selectedCategory?.cmsType) return;
-    set({ regionFilter: region });
+    set({ aggFilters: { ...aggFilters, [key]: value } });
     get().fetchInitialData({ keepFilterRow: true });
   },
 
-  setYearFilter: (year: string | null) => {
-    const { yearFilter, selectedCategory } = get();
-    if (year === yearFilter) return;
+  clearAggFilters: () => {
+    const { aggFilters, selectedCategory } = get();
     if (!selectedCategory?.cmsType) return;
-    set({ yearFilter: year });
+    if (Object.values(aggFilters).every((v) => !v)) return;
+    set({ aggFilters: { ...EMPTY_AGG_FILTERS } });
     get().fetchInitialData({ keepFilterRow: true });
+  },
+
+  toggleFilters: () => {
+    set((state) => ({ filtersVisible: !state.filtersVisible }));
+  },
+
+  setFiltersVisible: (visible: boolean) => {
+    set({ filtersVisible: visible });
   },
 
   refreshPlayRecords: async () => {

@@ -3,6 +3,7 @@ import {
   REGION_OPTIONS,
   YEAR_OPTION_COUNT,
   buildAggFilterParams,
+  filterServerReliableGroups,
   getYearOptions,
 } from "../categoryFilters";
 
@@ -70,5 +71,37 @@ describe("buildAggFilterParams", () => {
 
   it("两项都选都返回（服务端组合生效）", () => {
     expect(buildAggFilterParams("美国", "2024")).toEqual({ area: "美国", year: "2024" });
+  });
+});
+
+// 服务端下发的筛选组只保留可靠的 4 组（2026-11-18）：
+// cate（类型）与 score（评分）服务端处理不可靠，不作为筛选选项提供、
+// 面板不出现；筛选全部以服务端为准，不做客户端过滤。
+describe("filterServerReliableGroups（只留服务端可靠的 4 组）", () => {
+  const groups = [
+    { key: "cate", name: "类型", value: [{ n: "全部", v: "" }, { n: "科幻片", v: "科幻片" }] },
+    { key: "area", name: "地区", value: [{ n: "全部", v: "" }, { n: "香港", v: "香港" }] },
+    { key: "year", name: "年代", value: [{ n: "全部", v: "" }, { n: "2024", v: "2024" }] },
+    { key: "lang", name: "语言", value: [{ n: "全部", v: "" }, { n: "日语", v: "日语" }] },
+    { key: "score", name: "评分", value: [{ n: "全部", v: "" }, { n: "8分以上", v: "8分以上" }] },
+    { key: "order", name: "排序", value: [{ n: "默认", v: "" }, { n: "最新", v: "最新" }] },
+  ] as const;
+
+  it("6 组进、4 组出：cate/score 组被滤掉，area/year/lang/order 原样保留", () => {
+    const kept = filterServerReliableGroups(groups as any);
+    expect(kept.map((g) => g.key)).toEqual(["area", "year", "lang", "order"]);
+    expect(kept.find((g) => g.key === "area")!.value).toEqual([
+      { n: "全部", v: "" },
+      { n: "香港", v: "香港" },
+    ]);
+  });
+
+  it("服务端只下发可靠组时原样返回（不复制、不改顺序）", () => {
+    const reliable = groups.filter((g) => g.key !== "cate" && g.key !== "score") as any;
+    expect(filterServerReliableGroups(reliable)).toEqual(reliable);
+  });
+
+  it("服务端一组都不下发时返回空数组", () => {
+    expect(filterServerReliableGroups([])).toEqual([]);
   });
 });

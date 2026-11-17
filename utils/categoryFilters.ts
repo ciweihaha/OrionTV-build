@@ -17,6 +17,37 @@
 // 豆瓣分类与最近播放不提供地区/年代字段，筛选行在这些分类下不渲染
 // （见 app/index.tsx），不假装能筛。
 
+import type { AggFilters, AggFilterGroup, ReliableAggFilterGroup } from "@/services/api";
+
+// 服务端可靠处理的筛选键（2026-11-17 agg 实测）：area/year/lang/order。
+// cate（类型）/score（评分）服务端处理不可靠，不作为筛选选项提供。
+// 定义在这里（纯工具模块，从不被测试 mock）：测试会 mock @/services/api，
+// 常量放 api.ts 会在 mock 后变成 undefined，过滤就把所有组都丢掉
+//（与 EMPTY_AGG_FILTERS 同一个坑）。
+export const SERVER_RELIABLE_FILTER_KEYS = ["area", "year", "lang", "order"] as const;
+
+export type ServerReliableFilterKey = (typeof SERVER_RELIABLE_FILTER_KEYS)[number];
+
+// 筛选的空值（全部未选）：只含服务端可靠处理的 4 项。放这里（纯工具模块，
+// 从不被测试 mock），不放 services/api.ts——测试 mock api 时拿不到它，
+// getCacheKey 会崩。
+export const EMPTY_AGG_FILTERS: AggFilters = {
+  area: "",
+  year: "",
+  lang: "",
+  order: "",
+};
+
+/**
+ * 只保留服务端可靠处理的筛选组（area/year/lang/order）：服务端下发的
+ * cate（类型）/score（评分）组不渲染、不提供。筛选全部以服务端为准，
+ * 不做客户端过滤——服务端有的就筛，没有就算了。
+ */
+export function filterServerReliableGroups(groups: AggFilterGroup[]): ReliableAggFilterGroup[] {
+  const keep = new Set<string>(SERVER_RELIABLE_FILTER_KEYS);
+  return groups.filter((g): g is ReliableAggFilterGroup => keep.has(g.key));
+}
+
 export interface FilterOption {
   /** 界面显示的文字 */
   label: string;

@@ -16,7 +16,6 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
-import { REGION_OPTIONS, getYearOptions } from "@/utils/categoryFilters";
 
 const LOAD_MORE_THRESHOLD = 200;
 
@@ -45,10 +44,12 @@ export default function HomeScreen() {
     refreshPlayRecords,
     clearError,
     cmsFilterAvailable,
-    regionFilter,
-    yearFilter,
-    setRegionFilter,
-    setYearFilter,
+    aggFilters,
+    aggFilterGroups,
+    filtersVisible,
+    setAggFilter,
+    clearAggFilters,
+    toggleFilters,
   } = useHomeStore();
   const { isLoggedIn, logout } = useAuthStore();
   const apiConfigStatus = useApiConfig();
@@ -178,20 +179,19 @@ export default function HomeScreen() {
     }
   }, [selectedCategory, selectCategory]);
 
-  // 年代选项：全部 + 当前年份往回 6 年；只在挂载时算一次（会话内年份不变），
-  // 避免每次渲染都生成新数组让 FlatList 重渲染。
-  const yearOptions = React.useMemo(() => getYearOptions(), []);
+  // CMS 筛选（agg 下发的 4 组：地区/年代/语言/排序）：点选项直接走
+  // store（值没变或不在 CMS 分类下 store 内部不做事）；store 记下新值后带
+  // keepFilterRow 重拉首屏，筛选面板不卸、电视焦点不丢，列表按新条件变。
+  // “全部/默认”项的 v 是空串，点它等于清掉该组筛选。
+  const handleFilterSelect = useCallback((key: keyof typeof aggFilters, value: string) => {
+    setAggFilter(key, value);
+  }, [setAggFilter]);
 
-  // CMS 筛选：点选项直接走 store（值没变或不在 CMS 分类下 store 内部
-  // 不做事）；store 记下新值后带 keepFilterRow 重拉首屏，筛选行不卸、
-  // 电视焦点不丢，列表按新条件变。
-  const handleRegionSelect = useCallback((region: string | null) => {
-    setRegionFilter(region);
-  }, [setRegionFilter]);
-
-  const handleYearSelect = useCallback((year: string | null) => {
-    setYearFilter(year);
-  }, [setYearFilter]);
+  // 任一组筛选有值即“已选”：筛选按钮显示“筛选（已选）”，面板里出现“重置筛选”。
+  const hasActiveAggFilter = React.useMemo(
+    () => Object.values(aggFilters).some(Boolean),
+    [aggFilters],
+  );
 
   const isCmsCategory = !!selectedCategory?.cmsType;
   // 最近播放是本地记录分类，同样不依赖服务器配置（与 CMS 同理豁免）。
@@ -419,56 +419,61 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* CMS 地区 / 年代筛选行：只在 CMS 内容成功加载后出现（cmsFilterAvailable）。
-          豆瓣/最近播放没有地区/年代字段，不渲染、不假装能筛。选中态用绿底
-          （ghost  variant 已修成选中绿底）、焦点用 3px 白边（StyledButton），
-          两者可叠加：选中+聚焦 = 绿底白边。行不抢初始焦点（不设
+      {/* CMS 筛选面板：只在 CMS 内容成功加载后出现（cmsFilterAvailable）。
+          豆瓣/最近播放没有筛选字段，不渲染、不假装能筛。选项组由服务端下发
+          （agg filters 字段中服务端可靠的 4 组：地区/年代/语言/排序），不硬编码；
+          类型/评分服务端处理不可靠，不提供、不渲染。
+          默认收起，点“筛选”展开；已选时按钮显示“筛选（已选）”。选中态用绿底
+          （ghost variant 已修成选中绿底）、焦点用 3px 白边（StyledButton），
+          两者可叠加：选中+聚焦 = 绿底白边。面板不抢初始焦点（不设
           hasTVPreferredFocus），遥控下移进来再选；切筛选时 store 带
-          keepFilterRow 重载，行不卸、焦点不丢。 */}
+          keepFilterRow 重载，面板不卸、焦点不丢，列表按新条件变。 */}
       {cmsFilterAvailable && (
         <>
           <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
-            <ThemedText style={dynamicStyles.filterLabel}>地区</ThemedText>
-            <FlatList
-              data={REGION_OPTIONS}
-              renderItem={({ item }) => (
-                <StyledButton
-                  text={item.label}
-                  onPress={() => handleRegionSelect(item.value)}
-                  isSelected={regionFilter === item.value}
-                  style={dynamicStyles.categoryButton}
-                  textStyle={dynamicStyles.categoryText}
-                  variant="ghost"
-                />
-              )}
-              keyExtractor={(item) => item.label}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={dynamicStyles.filterListContent}
-              style={dynamicStyles.filterList}
+            <StyledButton
+              text={filtersVisible ? "收起筛选" : hasActiveAggFilter ? "筛选（已选）" : "筛选"}
+              onPress={toggleFilters}
+              style={dynamicStyles.categoryButton}
+              textStyle={dynamicStyles.categoryText}
+              variant="ghost"
             />
+            {hasActiveAggFilter && (
+              <StyledButton
+                text="重置筛选"
+                onPress={clearAggFilters}
+                style={dynamicStyles.categoryButton}
+                textStyle={dynamicStyles.categoryText}
+                variant="ghost"
+              />
+            )}
           </View>
-          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
-            <ThemedText style={dynamicStyles.filterLabel}>年代</ThemedText>
-            <FlatList
-              data={yearOptions}
-              renderItem={({ item }) => (
-                <StyledButton
-                  text={item.label}
-                  onPress={() => handleYearSelect(item.value)}
-                  isSelected={yearFilter === item.value}
-                  style={dynamicStyles.categoryButton}
-                  textStyle={dynamicStyles.categoryText}
-                  variant="ghost"
-                />
-              )}
-              keyExtractor={(item) => item.label}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={dynamicStyles.filterListContent}
-              style={dynamicStyles.filterList}
-            />
-          </View>
+          {filtersVisible && aggFilterGroups.map((group) => (
+            <View
+              key={group.key}
+              style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}
+            >
+              <ThemedText style={dynamicStyles.filterLabel}>{group.name}</ThemedText>
+              <FlatList
+                data={group.value}
+                renderItem={({ item }) => (
+                  <StyledButton
+                    text={item.n}
+                    onPress={() => handleFilterSelect(group.key, item.v)}
+                    isSelected={aggFilters[group.key] === item.v}
+                    style={dynamicStyles.categoryButton}
+                    textStyle={dynamicStyles.categoryText}
+                    variant="ghost"
+                  />
+                )}
+                keyExtractor={(item) => `${group.key}-${item.n}-${item.v}`}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={dynamicStyles.filterListContent}
+                style={dynamicStyles.filterList}
+              />
+            </View>
+          ))}
         </>
       )}
 

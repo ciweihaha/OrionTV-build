@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { utf8ByteLength } from "../utils/utf8ByteLength";
+import type { ServerReliableFilterKey } from "@/utils/categoryFilters";
 
 // region: --- Interface Definitions ---
 export interface DoubanItem {
@@ -14,7 +15,33 @@ export interface DoubanResponse {
   list: DoubanItem[];
 }
 
-// --- OrionTV CMS 分类（直连 agg，不走 MoonTV baseURL / 401 重登）---
+// --- OrionTV CMS 分类筛选（直连 agg，不走 MoonTV baseURL / 401 重登）---
+// 筛选全部以服务端为准，不做任何客户端过滤：
+// 2026-11-17 agg 实测，服务端可靠支持 area/year/lang/order；
+// cate（类型）与 score（评分）服务端处理不可靠（cate=科幻只回 2 条、
+// score=9分以上回 0 条），故不作为筛选选项提供——面板里不出现这两组，
+// 服务端有的就筛，没有就算了。
+// 服务端可靠处理的筛选键见 utils/categoryFilters.SERVER_RELIABLE_FILTER_KEYS。
+
+/** CMS 筛选值：只含服务端可靠处理的 4 项；"" = 全部（不拼参数）。 */
+export type AggFilters = Record<ServerReliableFilterKey, string>;
+
+export interface AggFilterOption {
+  n: string;
+  v: string;
+}
+
+// 服务端下发的筛选组：key 是服务端原样返回的 6 种之一（含 cate/score，
+// 面板只渲染其中服务端可靠的 4 组，见 utils/categoryFilters.filterServerReliableGroups）。
+export interface AggFilterGroup {
+  key: "cate" | "area" | "year" | "lang" | "score" | "order";
+  name: string;
+  value: AggFilterOption[];
+}
+
+/** 面板渲染用的筛选组：key 只含服务端可靠的 4 项（store 已滤掉 cate/score 组）。 */
+export type ReliableAggFilterGroup = Omit<AggFilterGroup, "key"> & { key: ServerReliableFilterKey };
+
 export interface AggVideoItem {
   vod_id: string;
   vod_name: string;
@@ -37,6 +64,8 @@ export interface AggCategoryResponse {
   total: number;
   list: AggVideoItem[];
   class?: { type_id: number; type_name: string }[];
+  // 服务端下发的筛选维度（原样返回，供首页筛选面板渲染，不得硬编码选项）。
+  filters?: AggFilterGroup[];
 }
 
 // agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
@@ -626,19 +655,22 @@ export class API {
   async getAggCategory(
     t: 1 | 2 | 3 | 4,
     pg: number,
-    // 地区 / 年代筛选（2026-11-12 agg 实测支持 videolist 的 area/year 参数）：
-    // area 是包含匹配（area=香港 同时命中 "香港" 与 "中国香港"），
-    // year 是精确年份匹配（year=201 返回 0 条，年代段无法表达），
-    // 两者可组合；未选的项不拼参数，与无筛选行为一致。
+    // 筛选全部走服务端（2026-11-17 agg 实测）：area/year/lang/order 服务端可靠
+    // 支持；cate/score 服务端处理不可靠，不作为筛选选项提供、不拼进 URL，
+    // 也不做客户端过滤——服务端有的就筛，没有就算了。
+    // 未选的项不拼参数，与无筛选行为一致。
     // 与版本接口无关：本方法只请求 ac=videolist，不碰 oriontv-version。
-    filters?: { area?: string; year?: string },
+    filters?: Partial<AggFilters>,
     // 调用方取消信号：切分类/切筛选后旧请求的结果会被 store 的 isStale 丢弃，
     // 没必要继续重试（最多 3 次 × 15 秒 + 退避），直接中止省流量与时间。
     signal?: AbortSignal,
   ): Promise<AggCategoryResponse> {
     const parts = [`ac=videolist`, `t=${t}`, `pg=${pg}`];
-    if (filters?.area) parts.push(`area=${encodeURIComponent(filters.area)}`);
-    if (filters?.year) parts.push(`year=${encodeURIComponent(filters.year)}`);
+    // 只发服务端可靠的四个参数（AggFilters 只有这四项）。
+    (["area", "year", "lang", "order"] as const).forEach((key) => {
+      const value = filters?.[key];
+      if (value) parts.push(`${key}=${encodeURIComponent(value)}`);
+    });
     const url = `${AGG_BASE_URL}?${parts.join("&")}`;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {

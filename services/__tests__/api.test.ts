@@ -463,6 +463,27 @@ describe("API.getAggCategory 地区 / 年代筛选", () => {
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toBe("https://ysp.ciweihaha.win/agg?ac=videolist&t=1&pg=1");
   });
+
+  it("传 lang / order 时 URL 带这两个参数（服务端可靠支持）", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1, { lang: "日语", order: "最新" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain(`lang=${encodeURIComponent("日语")}`);
+    expect(url).toContain("order=%E6%9C%80%E6%96%B0");
+  });
+
+  it("四项全选时 URL 只含 area/year/lang/order（cate/score 不提供、不拼参数）", async () => {
+    fetchMock.mockResolvedValue(aggOk());
+    await api.getAggCategory(1, 1, { area: "日本", year: "2024", lang: "日语", order: "最新" });
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toBe(
+      "https://ysp.ciweihaha.win/agg?ac=videolist&t=1&pg=1" +
+        `&area=${encodeURIComponent("日本")}&year=2024` +
+        `&lang=${encodeURIComponent("日语")}&order=${encodeURIComponent("最新")}`,
+    );
+    expect(url).not.toContain("cate=");
+    expect(url).not.toContain("score=");
+  });
 });
 
 describe("API._fetch Expo 原生 fetch 取消错误识别（1.6.7 实测 bug）", () => {
