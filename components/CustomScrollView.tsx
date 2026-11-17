@@ -239,6 +239,10 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
         onEndReached={handleEndReached}
         onEndReachedThreshold={endReachedThreshold}
         getItemLayout={deviceType === 'tv' ? getItemLayout : undefined}
+        // 数据被换掉时保持可见内容位置：首屏刷新/翻页去重等场景下，
+        // 新数组直接替换旧数组会让 FlatList 把滚动位置顶回顶部；
+        // 该属性让列表在数据变化时尽量稳住当前可见的卡片。
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         // 虚拟化：首屏只挂约 20 张卡，窗口外不渲染。原来 ScrollView 全量挂载，
         // 60 条首屏 = 60 张卡 + 60 张海报同时解码，是首屏卡顿的最大头。
         initialNumToRender={20}

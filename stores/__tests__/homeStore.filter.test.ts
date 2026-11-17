@@ -382,3 +382,140 @@ describe("homeStore 筛选流程复现（用户报：怎么筛都是同样的页
     expect(useHomeStore.getState().filtersVisible).toBe(false);
   });
 });
+
+describe("homeStore 滚动回顶回归（用户报：往上滑跳回第一页）", () => {
+  let useHomeStore: any;
+  let getAggMock: jest.Mock;
+  let getDoubanMock: jest.Mock;
+
+  function titles(): string[] {
+    return useHomeStore.getState().contentData.map((i: any) => i.title);
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const freshApi = require("@/services/api").api;
+    getAggMock = freshApi.getAggCategory as jest.Mock;
+    getDoubanMock = freshApi.getDoubanData as jest.Mock;
+    getDoubanMock.mockResolvedValue(DOUBAN_FALLBACK);
+    getAggMock.mockImplementation((_t: number, _pg: number, filters?: any) => {
+      if (filters?.area === "香港" && filters?.year === "2024") return Promise.resolve(HK_2024);
+      if (filters?.area === "香港") return Promise.resolve(HK_ONLY);
+      if (filters?.year === "2024") return Promise.resolve(YEAR_2024);
+      if (filters?.area === "英国") return Promise.resolve(EMPTY);
+      if (filters?.lang === "日语") return Promise.resolve(JP_ONLY);
+      if (filters?.order === "最新") return Promise.resolve(LATEST);
+      return Promise.resolve(UNFILTERED);
+    });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    useHomeStore = require("../homeStore").default;
+  });
+
+  async function enterMovie() {
+    const store = useHomeStore.getState();
+    const movie = store.categories.find((c: any) => c.title === "电影");
+    store.selectCategory(movie);
+    await waitFor(
+      () => JSON.stringify(titles()) === JSON.stringify(["未筛影片A", "未筛影片B"]),
+    );
+  }
+
+  // 让首屏缓存过期（5 分钟）：把 Date.now 往后拨 6 分钟，
+  // 缓存校验按它算，首屏缓存即失效；同时真实时间仍在走，
+  // waitFor 的超时判断不受影响。用完必须 mockRestore。
+  function expireCache() {
+    const RealDateNow = Date.now.bind(Date);
+    const base = RealDateNow();
+    return jest
+      .spyOn(Date, "now")
+      .mockImplementation(() => base + 6 * 60 * 1000 + (RealDateNow() - base));
+  }
+
+  // 后台刷新回来的新内容（与首屏不同，用于确认列表被换上）。
+  const REFRESHED = aggResponse([
+    { id: "r1", name: "刷新影片A", area: "美国", year: "2026", vodClass: "科幻", score: "8.5" },
+    { id: "r2", name: "刷新影片B", area: "中国大陆", year: "2025", vodClass: "剧情", score: "7.2" },
+  ]);
+
+  it("同内容重载（缓存过期）不清空列表、不置 loading，后台拉回新数据再换上", async () => {
+    await enterMovie();
+    const spy = expireCache();
+    try {
+      // 把 agg 请求挂住，模拟网络在飞
+      let resolveAgg: (v: any) => void = () => undefined;
+      getAggMock.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveAgg = resolve; }),
+      );
+      // 同分类同筛选再调一次 fetchInitialData（模拟滚动中被误触发）
+      const p = useHomeStore.getState().fetchInitialData();
+      await waitFor(() => getAggMock.mock.calls.length > 1);
+      // 加载中：列表不清空、不置 loading（FlatList 不被卸掉，滚动不丢）
+      expect(useHomeStore.getState().loading).toBe(false);
+      expect(titles()).toEqual(["未筛影片A", "未筛影片B"]);
+
+      resolveAgg(REFRESHED);
+      await p;
+      await waitFor(
+        () => JSON.stringify(titles()) === JSON.stringify(["刷新影片A", "刷新影片B"]),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("后台刷新失败不弹错、不清空已显示的列表", async () => {
+    await enterMovie();
+    const spy = expireCache();
+    try {
+      getAggMock.mockImplementationOnce(() =>
+        Promise.reject(new Error("Network request failed")),
+      );
+      await useHomeStore.getState().fetchInitialData();
+      // 旧列表还在，不写 error，不弹错遮住内容
+      expect(useHomeStore.getState().error).toBeNull();
+      expect(titles()).toEqual(["未筛影片A", "未筛影片B"]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("非 record 分类下，仅进度保存（条数不变）不触发首页重载", async () => {
+    await enterMovie();
+    // 把 fetchInitialData 换成 spy：只关心 refreshPlayRecords 有没有触发重载
+    const fetchSpy = jest.fn(() => Promise.resolve());
+    useHomeStore.setState({ fetchInitialData: fetchSpy });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const storage = require("@/services/storage").PlayRecordManager;
+    storage.getAll.mockResolvedValue({ k1: { save_time: 100 } });
+    await useHomeStore.getState().refreshPlayRecords();
+    // 第一次：条数 null→1，算变化，触发一次重载
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockClear();
+
+    // 只推高 save_time，条数不变：不应再触发重载
+    storage.getAll.mockResolvedValue({ k1: { save_time: 200 } });
+    await useHomeStore.getState().refreshPlayRecords();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // 列表还在，不被清空
+    expect(titles()).toEqual(["未筛影片A", "未筛影片B"]);
+  });
+
+  it("非 record 分类下，增删播放记录（条数变了）仍触发首页重载", async () => {
+    await enterMovie();
+    const fetchSpy = jest.fn(() => Promise.resolve());
+    useHomeStore.setState({ fetchInitialData: fetchSpy });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const storage = require("@/services/storage").PlayRecordManager;
+    storage.getAll.mockResolvedValue({ k1: { save_time: 100 } });
+    await useHomeStore.getState().refreshPlayRecords();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockClear();
+
+    // 新增一条记录：条数 1→2，应触发重载
+    storage.getAll.mockResolvedValue({ k1: { save_time: 100 }, k2: { save_time: 50 } });
+    await useHomeStore.getState().refreshPlayRecords();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

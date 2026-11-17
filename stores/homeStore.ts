@@ -16,6 +16,18 @@ const logger = Logger.withTag('HomeStore');
 // 指纹是可靠的变化检测：新增/重播都会推高最新 save_time，删任何一条
 // 都会改条数或最新 save_time。
 let lastPlayRecordsFingerprint: string | null = null;
+// 上次刷新时的播放记录条数：进度保存只推高 save_time、不改条数，
+// 不影响非 record 分类的首页网格；只有条数变了（增删记录）才可能
+// 影响“最近播放”分类的出现/消失，才需要重载首页。
+let lastPlayRecordsCount: number | null = null;
+
+// 当前屏幕上显示的数据对应的缓存键（见 getCacheKey）：同内容重载
+// （滚动中被 focus/指纹等误触发）时不清空列表、不置 loading，后台拉新
+// 数据直接换上，滚动位置不丢。切分类/切筛选时键变了，走正常清空加载。
+let lastDisplayedKey: string | null = null;
+// 后台刷新进行中（同内容重载）：此时 loadMoreData 失败不写 error，
+// 旧列表继续显示，不弹错遮住已加载的内容。
+let isBackgroundRefresh = false;
 
 const playRecordsFingerprint = (records: Record<string, PlayRecord>): string => {
   const keys = Object.keys(records);
@@ -267,6 +279,24 @@ const useHomeStore = create<HomeState>((set, get) => ({
         // 面板才有选项可渲染。
         aggFilterGroups: filterServerReliableGroups(cachedData.filterGroups ?? []),
       });
+      lastDisplayedKey = cacheKey;
+      return;
+    }
+
+    // 同内容刷新：当前屏上已是这一分类+筛选的数据，滚动中被 focus/指纹
+    // 等误触发 fetchInitialData 时，不要清空列表、不要置 loading——否则
+    // 首页 FlatList 被卸掉重挂，滚动直接回顶、还闪一下空白。后台重拉首屏，
+    // 新数据到了直接换上（loadMoreData 首屏分支），列表不闪、位置不丢。
+    // 切分类/切筛选时键已变，走下面正常清空加载。缓存命中已在上面提前返回，
+    // 走到这里是缓存过期/未命中，仍要拉新数据，但不能闪白回顶。
+    if (lastDisplayedKey === cacheKey && get().contentData.length > 0) {
+      set({ pageStart: 0, aggPage: 0, hasMore: true, error: null });
+      isBackgroundRefresh = true;
+      try {
+        await get().loadMoreData();
+      } finally {
+        isBackgroundRefresh = false;
+      }
       return;
     }
 
@@ -282,6 +312,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       cmsFilterAvailable: options?.keepFilterRow ? get().cmsFilterAvailable : false,
       aggFilterGroups: options?.keepFilterRow ? get().aggFilterGroups : [],
     });
+    lastDisplayedKey = null;
     await get().loadMoreData();
   },
 
@@ -381,6 +412,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             cmsFilterAvailable: false,
             aggFilterGroups: [],
           });
+          lastDisplayedKey = getCacheKey(get().selectedCategory, loadFilters);
         };
 
         // 筛选已选时 agg 失败/空列表不再回落豆瓣：筛选是服务端做的，
@@ -402,6 +434,12 @@ const useHomeStore = create<HomeState>((set, get) => ({
           if (isStale()) return;
         } catch (aggError) {
           if (isStale()) return;
+          // 后台刷新失败不回落豆瓣：旧列表还在屏上，回落会把用户正在看的
+          // 内容换成不相关的豆瓣榜单；失败只记日志，外层 catch 同样不写 error。
+          if (isBackgroundRefresh && get().contentData.length > 0) {
+            logger.warn("loadMoreData: background refresh agg failed, keeping displayed list", aggError);
+            return;
+          }
           if (nextPg === 1 && !hasActiveFilter && canFallbackToDouban) {
             await fallbackToDouban();
             return;
@@ -412,6 +450,12 @@ const useHomeStore = create<HomeState>((set, get) => ({
         // “宁可多不可空”），走回落；有筛选时是合法结果（窄组合确实没片），
         // 显示空状态、保留筛选行，用户可直接改筛选，不回落豆瓣。
         if (result.list.length === 0 && nextPg === 1) {
+          // 后台刷新拿到空列表也不清空：旧列表还在屏上，空结果很可能是
+          // 服务端一时抖动；保持旧列表，下次触发再试。
+          if (isBackgroundRefresh && get().contentData.length > 0) {
+            logger.warn("loadMoreData: background refresh got empty list, keeping displayed list");
+            return;
+          }
           if (hasActiveFilter) {
             set({
               contentData: [],
@@ -488,6 +532,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggFilterGroups: filterGroups,
             error: null,
           });
+          lastDisplayedKey = cacheKey;
         } else {
           const existingCache = dataCache.get(cacheKey);
           if (existingCache && existingCache.data.length < MAX_ITEMS_PER_CACHE) {
@@ -590,6 +635,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             hasMore: result.list.length !== 0,
             error: null,
           });
+          lastDisplayedKey = cacheKey;
         } else {
           // 增量加载时更新缓存
           const existingCache = dataCache.get(cacheKey);
@@ -675,7 +721,13 @@ const useHomeStore = create<HomeState>((set, get) => ({
         errorMessage = "访问被拒绝，请检查权限设置";
       }
 
-      set({ error: errorMessage });
+      // 后台刷新失败不写 error：旧列表还在屏上，写 error 会让首页弹错遮住
+      // 已加载的内容；失败只记日志，下次触发再试。
+      if (isBackgroundRefresh && get().contentData.length > 0) {
+        logger.warn("loadMoreData: background refresh failed, keeping displayed list", err);
+      } else {
+        set({ error: errorMessage });
+      }
     } finally {
       // 只清属于本次加载的标记与 loading：用控制器身份判断，不用分类/筛选
       // 身份——同分类二次加载时（selectCategory + 首页 effect 各调一次
@@ -719,6 +771,8 @@ const useHomeStore = create<HomeState>((set, get) => ({
         filtersVisible: false,
         cmsFilterAvailable: false,
       });
+      // 分类变了，屏上旧数据作废，显示键清掉；新数据到了再记。
+      lastDisplayedKey = null;
 
       if (category.type === 'record') {
         get().fetchInitialData().catch((error) => {
@@ -742,6 +796,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
           cmsFilterAvailable: category.cmsType ? true : false,
           aggFilterGroups: filterServerReliableGroups(cachedData.filterGroups ?? []),
         });
+        lastDisplayedKey = cacheKey;
       } else {
         // 删除过期缓存
         if (cachedData) {
@@ -818,6 +873,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
     const fingerprint = playRecordsFingerprint(records);
     const fingerprintUnchanged = fingerprint === lastPlayRecordsFingerprint;
     lastPlayRecordsFingerprint = fingerprint;
+    // 条数是否变了：进度保存只推高 save_time、不改条数。单独记条数，
+    // 供末尾判断用（见下）。
+    const recordsCount = Object.keys(records).length;
+    const recordsCountChanged = lastPlayRecordsCount === null || recordsCount !== lastPlayRecordsCount;
+    lastPlayRecordsCount = recordsCount;
     const hasRecords = Object.keys(records).length > 0;
     // updater 应为纯函数（同本函数第一分支）：selectCategory（含嵌套 set 与
     // 异步加载）不能在 updater 内调；先算新分类，set 之后再切。另去掉
@@ -836,8 +896,14 @@ const useHomeStore = create<HomeState>((set, get) => ({
     }
 
     // 记录未变且当前不在“最近播放”分类：不用重拉首页数据，
-    // 免掉一次全量重读 + 重排序 + 重渲染
-    if (fingerprintUnchanged && get().selectedCategory?.type !== "record") {
+    // 免掉一次全量重读 + 重排序 + 重渲染。
+    // 只有条数变了（增删记录）才重载非 record 分类：进度保存只推高
+    // save_time、不改条数，不影响当前 CMS/豆瓣网格；原来 save_time
+    // 一变就全量重载，滚动中会清空列表并回顶。record 分类保持按指纹
+    // （重播要重排最近播放顺序）。
+    if (get().selectedCategory?.type !== "record") {
+      if (!recordsCountChanged) return;
+    } else if (fingerprintUnchanged) {
       return;
     }
     get().fetchInitialData().catch((error) => {
