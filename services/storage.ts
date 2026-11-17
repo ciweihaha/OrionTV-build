@@ -22,6 +22,10 @@ const STORAGE_KEYS = {
   LIVE_FAV_CHANNELS: "mytv_live_fav_channels",
 } as const;
 
+/** 内置默认直播源：打开直播直接可用，不用用户手动填 M3U 地址。
+ * 用户在设置里改成别的地址后以他的为准；只有空白（未填/清空）时才回落到这里。 */
+export const DEFAULT_M3U_URL = "https://live.ciweihaha.win/live.m3u";
+
 // --- Type Definitions (aligned with api.ts) ---
 // Re-exporting for consistency, though they are now primarily API types
 export type PlayRecord = ApiPlayRecord & {
@@ -682,7 +686,7 @@ export class SettingsManager {
         enabledAll: true,
         sources: {},
       },
-      m3uUrl: "",
+      m3uUrl: DEFAULT_M3U_URL,
       autoSkipIntro: true,
       introSkipSeconds: 90,
       nextEpisodeOverlayEnabled: true,
@@ -694,6 +698,11 @@ export class SettingsManager {
       if (!data) return defaultSettings;
       const parsed = JSON.parse(data);
       const merged: AppSettings = { ...defaultSettings, ...(parsed && typeof parsed === "object" ? parsed : {}) };
+      // 直播源空白（老版本存的 "" 或用户清空后保存）时回落到内置默认地址，
+      // 否则已装好的机器打开直播还是“未配置直播源”；用户填过的非空地址不受影响。
+      if (!merged.m3uUrl || !merged.m3uUrl.trim()) {
+        merged.m3uUrl = DEFAULT_M3U_URL;
+      }
       // videoSource 深合并：已存的部分 videoSource（如旧版本缺 sources）不能
       // 整体覆盖默认值，否则 detailStore 访问 videoSource.sources[r.key] 抛 TypeError
       const savedVideoSource = (parsed as Partial<AppSettings>)?.videoSource;

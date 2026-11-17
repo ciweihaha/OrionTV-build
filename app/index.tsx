@@ -16,6 +16,7 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
+import { REGION_OPTIONS, getYearOptions } from "@/utils/categoryFilters";
 
 const LOAD_MORE_THRESHOLD = 200;
 
@@ -43,6 +44,11 @@ export default function HomeScreen() {
     selectCategory,
     refreshPlayRecords,
     clearError,
+    cmsFilterAvailable,
+    regionFilter,
+    yearFilter,
+    setRegionFilter,
+    setYearFilter,
   } = useHomeStore();
   const { isLoggedIn, logout } = useAuthStore();
   const apiConfigStatus = useApiConfig();
@@ -172,6 +178,21 @@ export default function HomeScreen() {
     }
   }, [selectedCategory, selectCategory]);
 
+  // 年代选项：全部 + 当前年份往回 6 年；只在挂载时算一次（会话内年份不变），
+  // 避免每次渲染都生成新数组让 FlatList 重渲染。
+  const yearOptions = React.useMemo(() => getYearOptions(), []);
+
+  // CMS 筛选：点选项直接走 store（值没变或不在 CMS 分类下 store 内部
+  // 不做事）；store 记下新值后带 keepFilterRow 重拉首屏，筛选行不卸、
+  // 电视焦点不丢，列表按新条件变。
+  const handleRegionSelect = useCallback((region: string | null) => {
+    setRegionFilter(region);
+  }, [setRegionFilter]);
+
+  const handleYearSelect = useCallback((year: string | null) => {
+    setYearFilter(year);
+  }, [setYearFilter]);
+
   const isCmsCategory = !!selectedCategory?.cmsType;
   // 最近播放是本地记录分类，同样不依赖服务器配置（与 CMS 同理豁免）。
   const isRecordCategory = selectedCategory?.type === "record";
@@ -229,6 +250,29 @@ export default function HomeScreen() {
       fontWeight: "500",
       // ThemedText 默认行高 24*scale（TV 上 46px），分类字看着巨大还往下顶
       lineHeight: 22,
+    },
+    // CMS 筛选行：标签 + 横向选项，与分类行/标签行同一套按钮样式。
+    // 标签灰色、与选项区分；列表占满剩余宽度（行容器是 row 布局，
+    // FlatList 不给 flex: 1 会被标签挤到只剩内容宽、横向滑不动）。
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    filterLabel: {
+      fontSize: 16,
+      fontWeight: "500",
+      lineHeight: 22,
+      color: "grey",
+      marginLeft: spacing,
+      marginRight: spacing / 2,
+    },
+    filterList: {
+      flex: 1,
+    },
+    // 筛选列表左侧不加内边距（标签的 marginLeft 已留出），右侧 TV 多留
+    // 48px 防 overscan 切掉最后一个选项（与分类行一致）。
+    filterListContent: {
+      paddingRight: deviceType === "tv" ? spacing * 3 : undefined,
     },
     contentContainer: {
       flex: 1,
@@ -373,6 +417,59 @@ export default function HomeScreen() {
             contentContainerStyle={dynamicStyles.categoryListContent}
           />
         </View>
+      )}
+
+      {/* CMS 地区 / 年代筛选行：只在 CMS 内容成功加载后出现（cmsFilterAvailable）。
+          豆瓣/最近播放没有地区/年代字段，不渲染、不假装能筛。选中态用绿底
+          （ghost  variant 已修成选中绿底）、焦点用 3px 白边（StyledButton），
+          两者可叠加：选中+聚焦 = 绿底白边。行不抢初始焦点（不设
+          hasTVPreferredFocus），遥控下移进来再选；切筛选时 store 带
+          keepFilterRow 重载，行不卸、焦点不丢。 */}
+      {cmsFilterAvailable && (
+        <>
+          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
+            <ThemedText style={dynamicStyles.filterLabel}>地区</ThemedText>
+            <FlatList
+              data={REGION_OPTIONS}
+              renderItem={({ item }) => (
+                <StyledButton
+                  text={item.label}
+                  onPress={() => handleRegionSelect(item.value)}
+                  isSelected={regionFilter === item.value}
+                  style={dynamicStyles.categoryButton}
+                  textStyle={dynamicStyles.categoryText}
+                  variant="ghost"
+                />
+              )}
+              keyExtractor={(item) => item.label}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={dynamicStyles.filterListContent}
+              style={dynamicStyles.filterList}
+            />
+          </View>
+          <View style={[dynamicStyles.categoryContainer, dynamicStyles.filterRow]}>
+            <ThemedText style={dynamicStyles.filterLabel}>年代</ThemedText>
+            <FlatList
+              data={yearOptions}
+              renderItem={({ item }) => (
+                <StyledButton
+                  text={item.label}
+                  onPress={() => handleYearSelect(item.value)}
+                  isSelected={yearFilter === item.value}
+                  style={dynamicStyles.categoryButton}
+                  textStyle={dynamicStyles.categoryText}
+                  variant="ghost"
+                />
+              )}
+              keyExtractor={(item) => item.label}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={dynamicStyles.filterListContent}
+              style={dynamicStyles.filterList}
+            />
+          </View>
+        </>
       )}
 
       {/* 内容网格 */}

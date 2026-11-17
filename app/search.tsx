@@ -21,6 +21,8 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
 import { Logger } from '@/utils/Logger';
+import { PinyinKeyboard } from "@/components/PinyinKeyboard";
+import { commitFirstCandidate } from "@/utils/pinyinInput";
 
 const logger = Logger.withTag('SearchScreen');
 
@@ -31,6 +33,9 @@ const searchResultCache = new Map<string, { at: number; results: SearchResult[] 
 
 export default function SearchScreen() {
   const [keyword, setKeyword] = useState("");
+  // TV 内置拼音键盘正在拼的拼音缓冲（未上屏的字母），展示在输入框里；
+  // 只有 TV 用（手机/平板走系统输入法）。
+  const [pinyinBuffer, setPinyinBuffer] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +207,19 @@ export default function SearchScreen() {
     };
   }, []);
 
-  const onSearchPress = () => handleSearch();
+  // 搜索按钮：TV 拼音键盘可能还有没上屏的拼音缓冲，先把首选字上屏再搜，
+  // 否则刚拼的音节会丢（只搜到已确定的字）。
+  const onSearchPress = () => {
+    const ch = commitFirstCandidate(pinyinBuffer);
+    if (ch) {
+      const kw = keyword + ch;
+      setKeyword(kw);
+      setPinyinBuffer("");
+      handleSearch(kw);
+      return;
+    }
+    handleSearch();
+  };
 
   const handleHistoryPress = (term: string) => {
     setKeyword(term);
@@ -245,29 +262,52 @@ export default function SearchScreen() {
   const renderSearchContent = () => (
     <>
       <View style={dynamicStyles.searchContainer}>
-        <TouchableOpacity
-          activeOpacity={1}
-          style={[
-            dynamicStyles.inputContainer,
-            {
-              borderColor: isInputFocused ? Colors.dark.primary : "transparent",
-            },
-          ]}
-          onPress={() => textInputRef.current?.focus()}
-        >
-          <TextInput
-            ref={textInputRef}
-            style={dynamicStyles.input}
-            placeholder="搜索电影、剧集..."
-            placeholderTextColor="#888"
-            value={keyword}
-            onChangeText={setKeyword}
-            onSubmitEditing={onSearchPress}
-            onFocus={() => setIsInputFocused(true)}
-            onBlur={() => setIsInputFocused(false)}
-            returnKeyType="search"
-          />
-        </TouchableOpacity>
+        {deviceType === 'tv' ? (
+          // TV：不用系统输入法（只有英文、没有中文切换），改用内置拼音键盘。
+          // 这里只做展示（关键词 + 正在拼的拼音缓冲，缓冲用浅色区分），
+          // 不渲染 TextInput，避免聚焦后又弹出系统英文键盘。
+          <View
+            style={[
+              dynamicStyles.inputContainer,
+              {
+                borderColor: isInputFocused ? Colors.dark.primary : "transparent",
+              },
+            ]}
+          >
+            <View style={dynamicStyles.tvInputTextRow}>
+              <ThemedText style={dynamicStyles.inputText} numberOfLines={1}>
+                {keyword || (!pinyinBuffer ? "搜索电影、剧集..." : "")}
+              </ThemedText>
+              {pinyinBuffer ? (
+                <ThemedText style={dynamicStyles.bufferText} numberOfLines={1}>{pinyinBuffer}</ThemedText>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[
+              dynamicStyles.inputContainer,
+              {
+                borderColor: isInputFocused ? Colors.dark.primary : "transparent",
+              },
+            ]}
+            onPress={() => textInputRef.current?.focus()}
+          >
+            <TextInput
+              ref={textInputRef}
+              style={dynamicStyles.input}
+              placeholder="搜索电影、剧集..."
+              placeholderTextColor="#888"
+              value={keyword}
+              onChangeText={setKeyword}
+              onSubmitEditing={onSearchPress}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              returnKeyType="search"
+            />
+          </TouchableOpacity>
+        )}
         <StyledButton style={dynamicStyles.searchButton} onPress={onSearchPress}>
           <Search size={deviceType === 'mobile' ? 20 : 24} color="white" />
         </StyledButton>
@@ -277,6 +317,17 @@ export default function SearchScreen() {
           </StyledButton>
         )}
       </View>
+
+      {/* TV 内置拼音键盘：输拼音、选中文上屏；手机/平板走系统输入法，不显示 */}
+      {deviceType === 'tv' && (
+        <PinyinKeyboard
+          keyword={keyword}
+          onKeywordChange={setKeyword}
+          buffer={pinyinBuffer}
+          onBufferChange={setPinyinBuffer}
+          onSearch={(kw) => handleSearch(kw)}
+        />
+      )}
 
       {loading ? (
         <VideoLoadingAnimation showProgressBar={false} />
@@ -372,6 +423,21 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       paddingHorizontal: spacing,
       color: "white",
       fontSize: isMobile ? 16 : 18,
+    },
+    // TV 输入框展示行：关键词 + 正在拼的拼音缓冲（缓冲用浅蓝色区分，表示还没上屏）
+    tvInputTextRow: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: spacing,
+    },
+    inputText: {
+      color: "white",
+      fontSize: 18,
+    },
+    bufferText: {
+      color: "#8ab4ff",
+      fontSize: 18,
     },
     searchButton: {
       width: isMobile ? minTouchTarget : 50,

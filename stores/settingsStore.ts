@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { SettingsManager, LoginCredentialsManager } from "@/services/storage";
+import { SettingsManager, LoginCredentialsManager, DEFAULT_M3U_URL } from "@/services/storage";
 import { api, ServerConfig } from "@/services/api";
 import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -59,7 +59,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
-  m3uUrl: "",
+  m3uUrl: DEFAULT_M3U_URL,
   remoteInputEnabled: false,
   autoSkipIntro: true,
   introSkipSeconds: 90,

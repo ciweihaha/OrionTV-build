@@ -31,8 +31,18 @@ const variantStyles = {
     selectedButton: {
       backgroundColor: colors.primary,
     },
+    // 焦点态必须一眼看出来、且和选中态（绿底）分得开：原来只有一条 2px
+    // 绿边（和选中同色），电视上遥控移动时根本看不出停在哪一集。
+    // 改成 3px 白边 + 阴影（不改背景色，和绿底选中态可叠加：选中+焦点
+    // = 绿底白边，三种状态各不相同）。
     focusedButton: {
-      borderColor: colors.primary,
+      borderWidth: 3,
+      borderColor: "#ffffff",
+      elevation: 5,
+      shadowColor: "#ffffff",
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.7,
+      shadowRadius: 10,
     },
     selectedText: {
       color: Colors.dark.text,
@@ -47,7 +57,8 @@ const variantStyles = {
     },
     focusedButton: {
       backgroundColor: colors.primary,
-      borderColor: colors.background,
+      borderWidth: 3,
+      borderColor: "#ffffff",
     },
     selectedButton: {
       backgroundColor: colors.primary,
@@ -65,7 +76,8 @@ const variantStyles = {
     },
     focusedButton: {
       backgroundColor: "rgba(119, 119, 119, 0.2)",
-      borderColor: colors.primary,
+      borderWidth: 3,
+      borderColor: "#ffffff",
     },
     // 选中态必须看得见：原来这里是两个空对象 {}，?? 回退不会触发
     // （{} 不是 null/undefined），选中和没选中长得一模一样，用户在
@@ -128,11 +140,14 @@ export const StyledButton = forwardRef<ViewInstance, StyledButtonProps>(
           // （UpdateSection 即受害者）。这里显式组合两者。
           onFocus={(e) => { setIsFocused(true); onFocus?.(e); }}
           onBlur={(e) => { setIsFocused(false); onBlur?.(e); }}
+          // 焦点高亮同时认 Pressable 的 focused 回调和内部 isFocused 状态
+          // （两者由同一组 onFocus/onBlur 驱动，任一生效都显示高亮，避免
+          // 某一路状态没触发就导致焦点看不见——正是选集页报的问题）。
           style={({ focused }) => [
             styles.button,
             variantStyles[variant].button,
             isSelected && (variantStyles[variant].selectedButton ?? styles.selectedButton),
-            focused && (variantStyles[variant].focusedButton ?? styles.focusedButton),
+            (focused || isFocused) && (variantStyles[variant].focusedButton ?? styles.focusedButton),
           ]}
           {...rest}
         >
