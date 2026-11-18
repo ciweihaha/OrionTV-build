@@ -288,4 +288,52 @@ describe("HomeScreen 无服务器场景（1.2.0 连不上网复现）", () => {
 
     expect(visibleTitles(root)).not.toContain("请点击右上角设置按钮，配置您的服务器地址");
   }, 30000);
+
+  it("未配服务器时 CMS 分类 agg 失败：错误不被清掉，显示错误屏 + 重试（平板 v1.7.5 回归）", async () => {
+    // 平板 v1.7.5 实测：agg 失败时首页只剩“该分类下暂无内容”，无报错、
+    // 无重试——clearError 的 effect 在未配服务器时把 CMS 的真实错误也清了。
+    // 修后：CMS 不依赖服务器，错误必须留下来让用户看到并重试。
+    useApiConfigMock.mockReturnValue({
+      isConfigured: false,
+      isValidating: false,
+      isValid: false,
+      error: null,
+      needsConfiguration: true,
+    });
+    getAggMock.mockRejectedValue(new Error("Network request failed"));
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    const root = renderer.root;
+
+    // 电影前面用例没点过，无缓存，必走 agg 请求
+    expect(pressButtonByLabel(root, "电影")).toBe(true);
+    await waitFor(() => visibleTitles(root).includes("网络连接失败，请检查网络连接"));
+
+    expect(visibleTitles(root)).toContain("重试");
+    expect(visibleTitles(root)).not.toContain("该分类下暂无内容");
+    expect(visibleTitles(root)).not.toContain("请点击右上角设置按钮，配置您的服务器地址");
+  }, 30000);
+
+  it("未配服务器时点热门剧集（依赖服务器的分类）：错误仍被清掉，显示配置提示", async () => {
+    // 反向锁定：需要服务器的分类，旧行为不变——错误清掉后由配置提示接管。
+    useApiConfigMock.mockReturnValue({
+      isConfigured: false,
+      isValidating: false,
+      isValid: false,
+      error: null,
+      needsConfiguration: true,
+    });
+    await act(async () => {
+      renderer = TestRenderer.create(<HomeScreen />);
+    });
+    const root = renderer.root;
+
+    expect(pressButtonByLabel(root, "热门剧集")).toBe(true);
+    await waitFor(() =>
+      visibleTitles(root).includes("请点击右上角设置按钮，配置您的服务器地址"),
+    );
+
+    expect(visibleTitles(root)).not.toContain("数据格式异常，请稍后重试");
+  }, 30000);
 });

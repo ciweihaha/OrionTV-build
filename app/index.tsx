@@ -139,12 +139,11 @@ export default function HomeScreen() {
     selectCategory,
   ]);
 
-  // 清除错误状态的逻辑
-  useEffect(() => {
-    if (apiConfigStatus.needsConfiguration && error) {
-      clearError();
-    }
-  }, [apiConfigStatus.needsConfiguration, error, clearError]);
+  // 清除错误状态的逻辑在 shouldShowApiConfig 之后（见下）：只清“需要服务
+  // 器才有的分类”的错误。CMS 分类（agg 直连）与最近播放（本地）不依赖
+  // 服务器，它们的加载错误是真实错误（网络/超时），必须显示出来（带重
+  // 试）；原来无服务器时任何错误都立即清掉，agg 失败时首页只剩“该分类
+  // 下暂无内容”、无报错、无重试，问题被静默藏起来。
 
   useEffect(() => {
     if (loading) {
@@ -327,6 +326,15 @@ export default function HomeScreen() {
     !selectedCategory.tags &&
     !selectedCategory.cmsType &&
     !isRecordCategory;
+
+  // 清除错误状态：只清“需要服务器才有的分类”的错误（此时配置提示会替
+  // 代错误屏显示，残留的旧错误不能盖住它）。CMS 与最近播放的错误不经过
+  // 这里，加载失败时错误屏 + 重试按钮正常出现。
+  useEffect(() => {
+    if (shouldShowApiConfig && error) {
+      clearError();
+    }
+  }, [shouldShowApiConfig, error, clearError]);
 
   // TV端和平板端的顶部导航
   const renderHeader = () => {
