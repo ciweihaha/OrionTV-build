@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { isVodConfigUrl } from '@/utils/vodConfig';
 
 export interface ApiConfigStatus {
   isConfigured: boolean;
@@ -28,6 +29,11 @@ export const useApiConfig = () => {
   const isConfigured = Boolean(apiBaseUrl && apiBaseUrl.trim());
   const needsConfiguration = !isConfigured;
 
+  // 点播配置模式（v1.7.11）：地址栏是 vod.json 这类静态配置，不是
+  // MoonTV 服务器——没有 serverConfig 可校验，也不弹配置提示。
+  // 首页 CMS 分类走写死的 agg，与服务器无关，直接视为已配置且有效。
+  const isVodConfig = isVodConfigUrl(apiBaseUrl);
+
   // 未配置时直接重置校验状态。L18d：不再像原来那样单独调一次
   // api.getServerConfig()——那与 store 的 fetchServerConfig 是两次并行重复请求。
   // store 的拉取已在 loadSettings / saveSettings / checkLoginStatus 里触发
@@ -53,7 +59,8 @@ export const useApiConfig = () => {
 
   // Update validation state based on server config
   useEffect(() => {
-    if (!isLoadingServerConfig && isConfigured) {
+    // 点播配置模式不走服务器校验：serverConfig 恒为 null，不判无效。
+    if (!isLoadingServerConfig && isConfigured && !isVodConfig) {
       if (serverConfig) {
         // 校验完成必须把 isValidating 复位：effect 2 在加载开始时把它置 true，
         // 这里不复位，status.isValidating 永久为真，非 CMS 分类永远显示
@@ -71,15 +78,24 @@ export const useApiConfig = () => {
         }));
       }
     }
-  }, [serverConfig, isLoadingServerConfig, isConfigured]);
+  }, [serverConfig, isLoadingServerConfig, isConfigured, isVodConfig]);
 
-  const status: ApiConfigStatus = {
-    isConfigured,
-    isValidating: validationState.isValidating || isLoadingServerConfig,
-    isValid: validationState.isValid,
-    error: validationState.error,
-    needsConfiguration,
-  };
+  // 点播配置模式直接报“已配置且有效”，不经过上面的 serverConfig 校验。
+  const status: ApiConfigStatus = isVodConfig
+    ? {
+        isConfigured: true,
+        isValidating: false,
+        isValid: true,
+        error: null,
+        needsConfiguration: false,
+      }
+    : {
+        isConfigured,
+        isValidating: validationState.isValidating || isLoadingServerConfig,
+        isValid: validationState.isValid,
+        error: validationState.error,
+        needsConfiguration,
+      };
 
   return status;
 };

@@ -3,11 +3,12 @@
 // 真实 StyledButton 的焦点样式由 StyledButton-focus.test.tsx 覆盖。
 import * as React from "react";
 import renderer, { act } from "react-test-renderer";
-import { View } from "react-native";
 import { PinyinKeyboard } from "../PinyinKeyboard";
 
 jest.mock("../StyledButton", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require("react-native");
   return {
     StyledButton: (props: any) => (
@@ -100,9 +101,9 @@ describe("PinyinKeyboard（电视内置拼音输入）", () => {
     expect(kb.keyword()).toBe("中国");
   });
 
-  it("中/英切换：英文模式下字母直接上屏，不出候选", () => {
+  it("中/英切换：点“英文”段进英文模式，字母直接上屏，不出候选", () => {
     const kb = renderKeyboard();
-    pressKey(kb.root(), "中文");
+    pressKey(kb.root(), "英文");
     kb.rerender();
     for (const k of ["A", "B", "C"]) {
       pressKey(kb.root(), k);
@@ -114,6 +115,32 @@ describe("PinyinKeyboard（电视内置拼音输入）", () => {
     expect(() =>
       kb.root().root.findByProps({ testID: "kb-接" }),
     ).toThrow();
+  });
+
+  it("中/英两段始终同时可见（v1.7.11：单按钮只显当前模式，用户看不出能切）", () => {
+    const kb = renderKeyboard();
+    // 中文模式下两段都在
+    expect(() => kb.root().root.findByProps({ testID: "kb-中文" })).not.toThrow();
+    expect(() => kb.root().root.findByProps({ testID: "kb-英文" })).not.toThrow();
+    // 切到英文后两段也都在
+    pressKey(kb.root(), "英文");
+    kb.rerender();
+    expect(() => kb.root().root.findByProps({ testID: "kb-中文" })).not.toThrow();
+    expect(() => kb.root().root.findByProps({ testID: "kb-英文" })).not.toThrow();
+  });
+
+  it("点已选中的段不清空拼音缓冲", () => {
+    const kb = renderKeyboard();
+    for (const k of ["J", "I", "E"]) {
+      pressKey(kb.root(), k);
+      kb.rerender();
+    }
+    expect(kb.buffer()).toBe("jie");
+    // 已在中文模式，再点“中文”段：不切换、不清空缓冲
+    pressKey(kb.root(), "中文");
+    kb.rerender();
+    expect(kb.buffer()).toBe("jie");
+    expect(kb.keyword()).toBe("");
   });
 
   it("删除键：先删拼音缓冲，缓冲空了再删关键词", () => {

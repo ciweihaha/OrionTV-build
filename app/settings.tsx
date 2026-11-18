@@ -6,7 +6,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { StyledButton } from "@/components/StyledButton";
 import { useThemeColor } from "@/hooks/useThemeColor";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useRemoteControlStore } from "@/stores/remoteControlStore";
+import { useRemoteControlStore, resolveRemoteInputTarget } from "@/stores/remoteControlStore";
 import { APIConfigSection, APIConfigSectionRef } from "@/components/settings/APIConfigSection";
 import { LiveStreamSection, LiveStreamSectionRef } from "@/components/settings/LiveStreamSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
@@ -34,7 +34,7 @@ function isSectionItem(
 
 export default function SettingsScreen() {
   const { loadSettings, saveSettings } = useSettingsStore();
-  const { lastMessage, lastMessageAt, targetPage, clearMessage } = useRemoteControlStore();
+  const { lastMessage, lastMessageAt, targetPage, clearMessage, inputTarget } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
 
@@ -57,15 +57,21 @@ export default function SettingsScreen() {
   }, [loadSettings]);
 
   const handleRemoteInput = (message: string) => {
-    // Handle remote input based on currently focused section
     // 走 section 的 setInputValue（而不是直接调 store）：远程输入是整串替换，
-    // 只有这条路会把光标同步移到末尾，否则之后在电视上打字会插到文本中间
-    if (currentSection === "api" && apiSectionRef.current) {
+    // 只有这条路会把光标同步移到末尾，否则之后在电视上打字会插到文本中间。
+    // v1.7.11：落点按输入框 onFocus 记下的 inputTarget 优先，当前分区次之，
+    // 都没记下时默认 API 地址栏——永不静默丢弃，并 Toast 告知落到了哪。
+    // 旧逻辑只认 currentSection，平板上分区 onFocus 不可靠，手机扫码打字
+    // 后 app 毫无反应就是这么丢的（手机端还显示发送成功）。
+    const target = resolveRemoteInputTarget(inputTarget, currentSection);
+    if (target === "api" && apiSectionRef.current) {
       // API Config Section
       apiSectionRef.current.setInputValue(message);
-    } else if (currentSection === "livestream" && liveStreamSectionRef.current) {
+      Toast.show({ type: "success", text1: "远程输入已填入 API 地址" });
+    } else if (target === "livestream" && liveStreamSectionRef.current) {
       // Live Stream Section
       liveStreamSectionRef.current.setInputValue(message);
+      Toast.show({ type: "success", text1: "远程输入已填入直播源地址" });
     }
   };
 

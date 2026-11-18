@@ -23,7 +23,7 @@ export interface LiveStreamSectionRef {
 export const LiveStreamSection = forwardRef<LiveStreamSectionRef, LiveStreamSectionProps>(
   ({ onChanged, onFocus, onBlur, onPress }, ref) => {
     const { m3uUrl, setM3uUrl, remoteInputEnabled } = useSettingsStore();
-    const { serverUrl } = useRemoteControlStore();
+    const { serverUrl, setInputTarget } = useRemoteControlStore();
     const [isInputFocused, setIsInputFocused] = useState(false);
     const [isSectionFocused, setIsSectionFocused] = useState(false);
     const inputRef = useRef<TextInputInstance>(null);
@@ -104,6 +104,9 @@ export const LiveStreamSection = forwardRef<LiveStreamSectionRef, LiveStreamSect
               autoCorrect={false}
               onFocus={() => {
                 setIsInputFocused(true);
+                // 远程输入落点：输入框自己记目标，不依赖外层分区的 onFocus
+                // （平板触摸时分区 onFocus 不可靠，消息会被静默丢掉，见 v1.7.11）。
+                setInputTarget("livestream");
                 // 将光标移动到文本末尾（命令式，不挂受控 selection，见上）
                 moveCursorToEnd(m3uUrl.length);
               }}

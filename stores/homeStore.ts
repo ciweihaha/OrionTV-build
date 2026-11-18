@@ -269,7 +269,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
     // 屏上旧数据作废：不设这个，loadMoreData 首屏分支的后台刷新守卫
     // 会把失败当成“旧列表还在”而不写 error。
     lastDisplayedKey = null;
-    const { selectedCategory } = get();
     set({
       loading: true,
       loadingMore: false,
@@ -768,6 +767,11 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
       if (msg === "API_URL_NOT_SET") {
         errorMessage = "请点击右上角设置按钮，配置您的服务器地址";
+      } else if (msg === "VOD_CONFIG_NO_SERVER") {
+        // 只配了点播链接（vod.json）时：CMS 内容照常走 agg，豆瓣榜单
+        // / 热门剧集这类要 MoonTV 的分类才到这里，提示要配服务器，
+        // 而不是笼统的“加载失败，请重试”。
+        errorMessage = "该分类需要 MoonTV 服务器，当前只配置了点播链接";
       } else if (msg === "UNAUTHORIZED") {
         // 会话超时：API 层已尝试自动重登并重试，仍失败说明重登也没成功，
         // 此时才提示用户重新登录（登录框由 restoreSession 弹出）。

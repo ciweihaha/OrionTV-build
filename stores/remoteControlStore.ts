@@ -32,8 +32,35 @@ interface RemoteControlState {
    * 连续发两次相同内容时靠这个字段让订阅方感知到变化 */
   lastMessageAt: number | null;
   targetPage: string | null;
+  /**
+   * 远程输入的目标输入框（v1.7.11 修“手机打字 app 没反应”的根因）。
+   * 原来只认设置分区 Pressable 的 onFocus 记下的 currentSection，
+   * 平板上点输入框时外层 Pressable 的 onFocus 不可靠（输入框抢焦点，
+   * Pressable 不触发），currentSection 常是 null，消息被静默丢掉，
+   * 手机端却显示发送成功。现在输入框自己的 onFocus 直接记目标，
+   * 不再依赖分区焦点；没记下时按当前分区；都没记下时默认进 API 地址栏。
+   */
+  inputTarget: "api" | "livestream" | null;
+  setInputTarget: (target: "api" | "livestream" | null) => void;
   setMessage: (message: string, targetPage?: string) => void;
   clearMessage: () => void;
+}
+
+/**
+ * 远程输入落点：输入框 onFocus 记下的目标优先；没记下时按当前分区；
+ * 都没记下时默认进 API 地址栏（远程输入最常用的就是改地址）。
+ * 旧逻辑是“分区不是 api/livestream 就丢掉”，手机扫码打字后 app
+ * 毫无反应就是这么丢的；现在永不静默丢弃。
+ * currentSection 在设置页是 string | null（分区 onFocus 赋 "api" /
+ * "livestream"），这里只认 "livestream"，其余一律默认 api。
+ */
+export function resolveRemoteInputTarget(
+  inputTarget: "api" | "livestream" | null,
+  currentSection: string | null,
+): "api" | "livestream" {
+  if (inputTarget) return inputTarget;
+  if (currentSection === "livestream") return "livestream";
+  return "api";
 }
 
 export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
@@ -45,6 +72,8 @@ export const useRemoteControlStore = create<RemoteControlState>((set, get) => ({
   lastMessage: null,
   lastMessageAt: null,
   targetPage: null,
+  inputTarget: null,
+  setInputTarget: (target) => set({ inputTarget: target }),
 
   startServer: async () => {
     desiredRunning = true;

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { SettingsManager, LoginCredentialsManager, DEFAULT_M3U_URL } from "@/services/storage";
 import { api, ServerConfig } from "@/services/api";
+import { isVodConfigUrl } from "@/utils/vodConfig";
 import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Logger } from "@/utils/Logger";
@@ -90,8 +91,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       },
     });
     if (settings.apiBaseUrl) {
-      api.setBaseUrl(settings.apiBaseUrl);
-      await get().fetchServerConfig();
+      // 点播配置地址（vod.json）：不是 MoonTV 服务器，不调 setBaseUrl、
+      // 不拉 /api/server-config（静态 JSON 没有这个接口）；只开 VOD 模式，
+      // 让 _fetch 抛 VOD_CONFIG_NO_SERVER 而不是 API_URL_NOT_SET。
+      // MoonTV 地址才走原来的服务器流程。
+      if (isVodConfigUrl(settings.apiBaseUrl)) {
+        api.setVodConfigMode(true);
+        api.setBaseUrl("");
+      } else {
+        api.setVodConfigMode(false);
+        api.setBaseUrl(settings.apiBaseUrl);
+        await get().fetchServerConfig();
+      }
     }
   },
   fetchServerConfig: () => {
@@ -206,10 +217,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         logger.warn('换服务器时清理旧登录凭据失败:', error);
       }
     }
-    api.setBaseUrl(processedApiBaseUrl);
-    // Also update the URL in the state so the input field shows the processed URL
-    set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl });
-    await get().fetchServerConfig();
+    // 点播配置地址（vod.json）：只落盘 + 显示，不拉服务器配置
+    // （见 loadSettings 的同款注释）；同时清掉旧的 baseURL，否则
+    // _fetch 会拿旧 MoonTV 地址继续发请求。MoonTV 地址才走原来的流程。
+    if (isVodConfigUrl(processedApiBaseUrl)) {
+      api.setVodConfigMode(true);
+      api.setBaseUrl("");
+      set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl });
+    } else {
+      api.setVodConfigMode(false);
+      api.setBaseUrl(processedApiBaseUrl);
+      // Also update the URL in the state so the input field shows the processed URL
+      set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl });
+      await get().fetchServerConfig();
+    }
   },
   showModal: () => set({ isModalVisible: true }),
   hideModal: () => set({ isModalVisible: false }),

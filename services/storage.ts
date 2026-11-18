@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { api, PlayRecord as ApiPlayRecord, Favorite as ApiFavorite } from "./api";
 import { storageConfig } from "./storageConfig";
 import { Logger } from '@/utils/Logger';
+import { DEFAULT_VOD_CONFIG_URL } from '@/utils/vodConfig';
 import { utf8ByteLength } from '../utils/utf8ByteLength';
 import type { EpgData } from "./epg";
 
@@ -25,6 +26,10 @@ const STORAGE_KEYS = {
 /** 内置默认直播源：打开直播直接可用，不用用户手动填 M3U 地址。
  * 用户在设置里改成别的地址后以他的为准；只有空白（未填/清空）时才回落到这里。 */
 export const DEFAULT_M3U_URL = "https://live.ciweihaha.win/live.m3u";
+
+/** 内置默认点播配置（vod.json）：新装默认就填它，首页不用配服务器直接出内容。
+ * 详见 utils/vodConfig.ts（这里重导出，调用方沿用 storage 的导出习惯）。 */
+export { DEFAULT_VOD_CONFIG_URL } from "@/utils/vodConfig";
 
 // --- Type Definitions (aligned with api.ts) ---
 // Re-exporting for consistency, though they are now primarily API types
@@ -680,7 +685,7 @@ export class LiveChannelPrefsManager {
 export class SettingsManager {
   static async get(): Promise<AppSettings> {
     const defaultSettings: AppSettings = {
-      apiBaseUrl: "",
+      apiBaseUrl: DEFAULT_VOD_CONFIG_URL,
       remoteInputEnabled: true,
       videoSource: {
         enabledAll: true,
@@ -702,6 +707,12 @@ export class SettingsManager {
       // 否则已装好的机器打开直播还是“未配置直播源”；用户填过的非空地址不受影响。
       if (!merged.m3uUrl || !merged.m3uUrl.trim()) {
         merged.m3uUrl = DEFAULT_M3U_URL;
+      }
+      // 点播配置空白（老版本存的 "" 或用户清空后保存）时同样回落到内置
+      // vod.json：v1.7.11 起点播链接是默认预填的，用户真想清空也清不掉
+      // （与上面 m3uUrl 同款逻辑）；用户填过的非空地址不受影响。
+      if (!merged.apiBaseUrl || !merged.apiBaseUrl.trim()) {
+        merged.apiBaseUrl = DEFAULT_VOD_CONFIG_URL;
       }
       // videoSource 深合并：已存的部分 videoSource（如旧版本缺 sources）不能
       // 整体覆盖默认值，否则 detailStore 访问 videoSource.sources[r.key] 抛 TypeError

@@ -1,7 +1,8 @@
 // 电视端内置拼音键盘（搜索界面用）：
 // 系统输入法没有中文、且最下面的切换只能在系统输入法和全键盘之间切，
 // 所以直接在 app 内做一个拼音键盘：输字母拼拼音 → 出中文候选词 → 选中上屏，
-// 并有 中/英 切换和数字切换。只在 TV 上用（手机/平板有系统中文输入法）。
+// 并有 中/英 分段开关（“中文”“英文”两段同时可见，v1.7.11）和数字切换。
+// 只在 TV 上用（手机/平板有系统中文输入法）。
 // 布局按电视 1920x1080 设计：候选行 + 三行字母 + 一行功能键，总高约 310px，
 // 不会溢出屏幕；候选行没候选时保留同高空行，避免键盘上下跳动、焦点乱跳。
 import React, { useMemo, useState, useCallback } from "react";
@@ -128,10 +129,20 @@ export const PinyinKeyboard: React.FC<PinyinKeyboardProps> = ({
     onSearch(kw);
   }, [buffer, keyword, onKeywordChange, onBufferChange, onSearch]);
 
-  const toggleMode = useCallback(() => {
-    onBufferChange("");
-    setMode((m) => (m === "zh" ? "en" : "zh"));
-  }, [onBufferChange]);
+  // 中/英切换（v1.7.11 改成分段开关）：原来只有一个按钮、文案显示当前
+  // 模式（中文模式显示“中文”），用户当成状态标签、看不出能点、也不知道
+  // 还有英文可切。现在“中文”“英文”两个段同时可见，当前模式绿底高亮，
+  // 点另一段才切换（并清空拼音缓冲）；点已选中的段什么都不做，不清空缓冲。
+  const setModeTo = useCallback(
+    (next: "zh" | "en") => {
+      setMode((m) => {
+        if (m === next) return m;
+        onBufferChange("");
+        return next;
+      });
+    },
+    [onBufferChange],
+  );
 
   const toggleNumbers = useCallback(() => {
     onBufferChange("");
@@ -184,13 +195,23 @@ export const PinyinKeyboard: React.FC<PinyinKeyboardProps> = ({
 
       {/* 功能键区 */}
       <View style={styles.keyRow}>
-        <StyledButton
-          text={mode === "zh" ? "中文" : "英文"}
-          onPress={toggleMode}
-          isSelected={mode === "zh"}
-          style={styles.funcButton}
-          textStyle={styles.funcText}
-        />
+        {/* 中/英分段开关：两段同时可见，当前模式绿底高亮（见上面 setModeTo 的注释） */}
+        <View style={styles.langSwitch}>
+          <StyledButton
+            text="中文"
+            onPress={() => setModeTo("zh")}
+            isSelected={mode === "zh"}
+            style={styles.langButton}
+            textStyle={styles.funcText}
+          />
+          <StyledButton
+            text="英文"
+            onPress={() => setModeTo("en")}
+            isSelected={mode === "en"}
+            style={styles.langButton}
+            textStyle={styles.funcText}
+          />
+        </View>
         <StyledButton
           text={showNumbers ? "ABC" : "123"}
           onPress={toggleNumbers}
@@ -274,6 +295,19 @@ const createStyles = (spacing: number) =>
       fontSize: 24,
     },
     funcButton: {
+      flex: 1,
+      height: 60,
+      margin: 0,
+      paddingHorizontal: 0,
+    },
+    // 中/英分段开关：占两个按钮位（和空格键一样宽），一眼看到两种模式；
+    // 两段各 flex 1，当前模式绿底（StyledButton isSelected）。
+    langSwitch: {
+      flex: 2,
+      flexDirection: "row",
+      gap: 8,
+    },
+    langButton: {
       flex: 1,
       height: 60,
       margin: 0,

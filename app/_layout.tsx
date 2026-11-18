@@ -16,6 +16,7 @@ import { UpdateModal } from "@/components/UpdateModal";
 import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { Logger } from '@/utils/Logger';
+import { isVodConfigUrl } from "@/utils/vodConfig";
 
 const logger = Logger.withTag('RootLayout');
 
@@ -42,7 +43,8 @@ export default function RootLayout() {
   }, [loadSettings]);
 
   useEffect(() => {
-    if (apiBaseUrl) {
+    // 点播配置地址（vod.json）不是 MoonTV 服务器：不查登录、不弹登录框。
+    if (apiBaseUrl && !isVodConfigUrl(apiBaseUrl)) {
       checkLoginStatus(apiBaseUrl);
     }
   }, [apiBaseUrl, checkLoginStatus]);

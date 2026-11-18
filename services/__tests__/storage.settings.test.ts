@@ -1,7 +1,7 @@
 // 内置默认直播源（services/storage.ts 的 DEFAULT_M3U_URL）：
 // 新装或老版本存的空白 m3uUrl 都应回落到默认地址，打开直播直接可用；
 // 用户填过的非空地址不受影响。
-import { SettingsManager, DEFAULT_M3U_URL } from "../storage";
+import { SettingsManager, DEFAULT_M3U_URL, DEFAULT_VOD_CONFIG_URL } from "../storage";
 
 const mockStore = new Map<string, string>();
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -72,5 +72,37 @@ describe("内置默认直播源 DEFAULT_M3U_URL", () => {
     await SettingsManager.save({ m3uUrl: settings.m3uUrl });
     const reloaded = await SettingsManager.get();
     expect(reloaded.m3uUrl).toBe(DEFAULT_M3U_URL);
+  });
+});
+
+// 内置默认点播配置（services/storage.ts 的 DEFAULT_VOD_CONFIG_URL，v1.7.11）：
+// 与上面 DEFAULT_M3U_URL 同款逻辑——新装或老版本存的空白 apiBaseUrl 都
+// 回落到 vod.json，API 地址栏默认就填好；用户填过的 MoonTV 地址不受影响。
+describe("内置默认点播配置 DEFAULT_VOD_CONFIG_URL", () => {
+  beforeEach(() => {
+    mockStore.clear();
+    jest.clearAllMocks();
+  });
+
+  it("默认点播配置就是用户核对过的 vod.json", () => {
+    expect(DEFAULT_VOD_CONFIG_URL).toBe("https://live.ciweihaha.win/vod.json");
+  });
+
+  it("新装（无已存设置）时 apiBaseUrl 就是默认点播配置", async () => {
+    const settings = await SettingsManager.get();
+    expect(settings.apiBaseUrl).toBe(DEFAULT_VOD_CONFIG_URL);
+  });
+
+  it("老版本存的空白 apiBaseUrl 回落到默认点播配置", async () => {
+    mockStore.set(SETTINGS_KEY, JSON.stringify({ apiBaseUrl: "", m3uUrl: "" }));
+    const settings = await SettingsManager.get();
+    expect(settings.apiBaseUrl).toBe(DEFAULT_VOD_CONFIG_URL);
+  });
+
+  it("用户填过的 MoonTV 地址不受影响", async () => {
+    const custom = "https://movie.ciweihaha.win";
+    mockStore.set(SETTINGS_KEY, JSON.stringify({ apiBaseUrl: custom, m3uUrl: "" }));
+    const settings = await SettingsManager.get();
+    expect(settings.apiBaseUrl).toBe(custom);
   });
 });

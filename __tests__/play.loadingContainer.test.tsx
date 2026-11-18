@@ -18,7 +18,9 @@ jest.mock("@/utils/Logger", () => {
 const mockInfo = () => (globalThis as any).__mockLoggerInfo as jest.Mock;
 
 jest.mock("@/components/VideoLoadingAnimation", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactLib = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require("react-native");
   return {
     __esModule: true,

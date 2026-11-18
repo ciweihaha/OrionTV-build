@@ -218,6 +218,16 @@ export class API {
     this.baseURL = url;
   }
 
+  // 点播配置模式（v1.7.11）：API 地址栏填的是 vod.json 这类静态配置
+  // （不是 MoonTV 服务器）时为 true。此时 baseURL 留空（没有服务器可调），
+  // _fetch 抛 VOD_CONFIG_NO_SERVER 而不是 API_URL_NOT_SET，让调用方
+  // 能区分“只配了点播链接”与“什么都没配”，提示不同的文案。
+  private vodConfigMode = false;
+
+  public setVodConfigMode(mode: boolean) {
+    this.vodConfigMode = mode;
+  }
+
   public setSessionRestorer(restorer: (() => Promise<boolean>) | null) {
     this.sessionRestorer = restorer;
   }
@@ -403,7 +413,7 @@ export class API {
 
   private async _fetch(url: string, options: RequestInit = {}, timeoutMs: number = API.DEFAULT_TIMEOUT): Promise<Response> {
     if (!this.baseURL) {
-      throw new Error("API_URL_NOT_SET");
+      throw new Error(this.vodConfigMode ? "VOD_CONFIG_NO_SERVER" : "API_URL_NOT_SET");
     }
 
     // 调用方 signal 单独持有、独立判断：它只代表"调用方主动取消"，与超时严格区分。

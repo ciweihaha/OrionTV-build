@@ -121,6 +121,17 @@ describe("homeStore 无服务器场景（1.2.0 连不上网复现）", () => {
     expect(useHomeStore.getState().error).not.toContain("配置您的服务器地址");
   });
 
+  it("只配了点播链接（vod.json）时 CMS 失败：提示该分类要 MoonTV 服务器", async () => {
+    // v1.7.11：api._fetch 在 VOD 模式下抛 VOD_CONFIG_NO_SERVER（不是
+    // API_URL_NOT_SET），首页要把“该分类需要 MoonTV 服务器，当前只配置
+    // 了点播链接”说清楚，而不是笼统的“加载失败，请重试”。
+    getAggMock.mockRejectedValue(new Error("VOD_CONFIG_NO_SERVER"));
+    selectMovie();
+    await waitFor(() => useHomeStore.getState().error !== null);
+    expect(getDoubanMock).not.toHaveBeenCalled();
+    expect(useHomeStore.getState().error).toBe("该分类需要 MoonTV 服务器，当前只配置了点播链接");
+  });
+
   it("agg 内部超时 AbortError 不被当取消吞掉（第 17 轮 M1，B2 回归）", async () => {
     // getAggCategory 内部 15 秒超时 abort 也产生 AbortError，与调用方取消
     // 同形；B2 的 isCancelError 析取项会把它静默吞掉，首屏变错误空态。
