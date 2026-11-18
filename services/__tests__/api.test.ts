@@ -486,6 +486,73 @@ describe("API.getAggCategory 地区 / 年代筛选", () => {
   });
 });
 
+describe("API.getAggCategory filters 字典归一化（v1.7.8 真机复现）", () => {
+  let fetchMock: jest.Mock;
+  let api: API;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as any).fetch = fetchMock;
+    api = new API(BASE);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // 线上实测：filters 是按分类 id 分组的对象 {"1": [...]}，不是数组。
+  // 旧代码原样透传，store 的 filterServerReliableGroups 一调 .filter
+  // 就抛 TypeError: undefined is not a function，首页永远加载失败。
+  const dictFilters = {
+    "1": [
+      { key: "cate", name: "类型", value: [{ n: "全部", v: "" }] },
+      { key: "area", name: "地区", value: [{ n: "全部", v: "" }] },
+    ],
+    "2": [{ key: "area", name: "地区", value: [{ n: "全部", v: "" }] }],
+  };
+
+  it("字典 filters 取当前分类那一组返回数组", async () => {
+    fetchMock.mockResolvedValue(
+      makeResponse(200, { code: 1, list: [{ vod_id: "1" }], filters: dictFilters }),
+    );
+    const res = await api.getAggCategory(1, 1);
+    expect(Array.isArray(res.filters)).toBe(true);
+    expect(res.filters).toHaveLength(2);
+    expect((res.filters as any[])[0].key).toBe("cate");
+  });
+
+  it("字典里多组时只取请求分类那一组，不混进别的分类", async () => {
+    fetchMock.mockResolvedValue(
+      makeResponse(200, { code: 1, list: [{ vod_id: "1" }], filters: dictFilters }),
+    );
+    const res = await api.getAggCategory(2, 1);
+    expect(res.filters).toHaveLength(1);
+    expect((res.filters as any[])[0].key).toBe("area");
+  });
+
+  it("数组 filters 原样透传", async () => {
+    const arr = [{ key: "area", name: "地区", value: [] }];
+    fetchMock.mockResolvedValue(makeResponse(200, { code: 1, list: [], filters: arr }));
+    const res = await api.getAggCategory(1, 1);
+    expect(res.filters).toEqual(arr);
+  });
+
+  it("字典里没有请求分类的键时把所有组拼起来兜底", async () => {
+    fetchMock.mockResolvedValue(
+      makeResponse(200, { code: 1, list: [], filters: { "9": [{ key: "area", name: "地区", value: [] }] } }),
+    );
+    const res = await api.getAggCategory(1, 1);
+    expect(res.filters).toHaveLength(1);
+  });
+
+  it("filters 缺失或不是对象时返回空数组，不抛错", async () => {
+    fetchMock.mockResolvedValue(makeResponse(200, { code: 1, list: [] }));
+    expect((await api.getAggCategory(1, 1)).filters).toBeUndefined();
+    fetchMock.mockResolvedValue(makeResponse(200, { code: 1, list: [], filters: "bad" }));
+    expect((await api.getAggCategory(1, 1)).filters).toEqual([]);
+  });
+});
+
 describe("API._fetch Expo 原生 fetch 取消错误识别（1.6.7 实测 bug）", () => {
   let fetchMock: jest.Mock;
   let api: API;

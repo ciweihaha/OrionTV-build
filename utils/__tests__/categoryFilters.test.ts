@@ -104,4 +104,11 @@ describe("filterServerReliableGroups（只留服务端可靠的 4 组）", () =>
   it("服务端一组都不下发时返回空数组", () => {
     expect(filterServerReliableGroups([])).toEqual([]);
   });
+
+  it("filters 是对象/字符串等非数组时返回空数组，绝不抛 TypeError（v1.7.8 真机复现）", () => {
+    expect(filterServerReliableGroups({ "1": [] } as any)).toEqual([]);
+    expect(filterServerReliableGroups("bad" as any)).toEqual([]);
+    expect(filterServerReliableGroups(undefined as any)).toEqual([]);
+    expect(filterServerReliableGroups(null as any)).toEqual([]);
+  });
 });

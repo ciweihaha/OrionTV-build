@@ -64,8 +64,38 @@ export interface AggCategoryResponse {
   total: number;
   list: AggVideoItem[];
   class?: { type_id: number; type_name: string }[];
-  // 服务端下发的筛选维度（原样返回，供首页筛选面板渲染，不得硬编码选项）。
+  // 服务端下发的筛选维度（供首页筛选面板渲染，不得硬编码选项）。
+  // 注意线上的实际形状是按分类 id 分组的对象 {"1": [...], "2": [...]}，
+  // 不是数组（2026-11-18 真机实测：直接当数组 .filter 会抛
+  // TypeError: undefined is not a function，首页永远加载失败）。
+  // getAggCategory 返回前已归一化成当前分类的数组，下游只见数组。
+  filters?: AggFilterGroup[] | Record<string, AggFilterGroup[]>;
+}
+
+/** getAggCategory 返回的形状：filters 已归一化成数组，下游只见数组。 */
+export type NormalizedAggCategoryResponse = Omit<AggCategoryResponse, "filters"> & {
   filters?: AggFilterGroup[];
+};
+
+/**
+ * agg filters 归一化：服务端下发的是按分类 id 分组的对象
+ * {"1": [...], "2": [...]}，不是数组。取当前分类的那一组；键对不上时
+ * 把字典里所有数组拼起来兜底；不是数组也不是对象时返回空数组。
+ * 绝不能把原样对象透传给下游——filterServerReliableGroups 的 .filter
+ * 会在对象上抛 TypeError，首页列表直接加载失败（v1.7.7 真机复现）。
+ */
+export function normalizeAggFilterGroups(filters: unknown, t: number): AggFilterGroup[] {
+  if (Array.isArray(filters)) return filters as AggFilterGroup[];
+  if (filters && typeof filters === "object") {
+    const byType = (filters as Record<string, unknown>)[String(t)];
+    if (Array.isArray(byType)) return byType as AggFilterGroup[];
+    const all: AggFilterGroup[] = [];
+    for (const v of Object.values(filters as Record<string, unknown>)) {
+      if (Array.isArray(v)) all.push(...(v as AggFilterGroup[]));
+    }
+    return all;
+  }
+  return [];
 }
 
 // agg 地址固定，不放进用户可改的设置项，避免误改后分类加载失败。
@@ -664,7 +694,7 @@ export class API {
     // 调用方取消信号：切分类/切筛选后旧请求的结果会被 store 的 isStale 丢弃，
     // 没必要继续重试（最多 3 次 × 15 秒 + 退避），直接中止省流量与时间。
     signal?: AbortSignal,
-  ): Promise<AggCategoryResponse> {
+  ): Promise<NormalizedAggCategoryResponse> {
     const parts = [`ac=videolist`, `t=${t}`, `pg=${pg}`];
     // 只发服务端可靠的四个参数（AggFilters 只有这四项）。
     (["area", "year", "lang", "order"] as const).forEach((key) => {
@@ -712,7 +742,7 @@ export class API {
           }
           throw err;
         }
-        const data: AggCategoryResponse = await this.readJsonLimited(
+        const data: NormalizedAggCategoryResponse = await this.readJsonLimited(
           response,
           API.DEFAULT_TIMEOUT,
           // 只传调用方信号：本次尝试的 controller 信号带 15 秒 fetch 超时，
@@ -723,6 +753,11 @@ export class API {
         );
         if (!data || data.code !== 1 || !Array.isArray(data.list)) {
           throw new Error("AGG_INVALID_RESPONSE");
+        }
+        // filters 线上是按分类 id 分组的对象，不是数组：这里归一化，
+        // 下游 filterServerReliableGroups 才能安全 .filter。
+        if (data.filters !== undefined) {
+          data.filters = normalizeAggFilterGroups(data.filters, t);
         }
         return data;
       } catch (e) {

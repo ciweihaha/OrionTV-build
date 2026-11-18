@@ -44,6 +44,9 @@ export const EMPTY_AGG_FILTERS: AggFilters = {
  * 不做客户端过滤——服务端有的就筛，没有就算了。
  */
 export function filterServerReliableGroups(groups: AggFilterGroup[]): ReliableAggFilterGroup[] {
+  // 防御：服务端 filters 曾以对象形式下发（归一化见 services/api.ts），
+  // 非数组时直接返回空组，绝不能让 .filter 抛 TypeError 把首页列表拖垮。
+  if (!Array.isArray(groups)) return [];
   const keep = new Set<string>(SERVER_RELIABLE_FILTER_KEYS);
   return groups.filter((g): g is ReliableAggFilterGroup => keep.has(g.key));
 }

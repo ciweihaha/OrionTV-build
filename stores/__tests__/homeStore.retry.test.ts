@@ -130,4 +130,29 @@ describe("homeStore retryLoad（v1.7.7）", () => {
     expect(useHomeStore.getState().error).toBeNull();
     expect(useHomeStore.getState().errorDetail).toBeNull();
   });
+
+  it("服务端 filters 是字典对象时：内容仍加载出来，不报 TypeError（v1.7.8 真机复现）", async () => {
+    // 线上 filters 是 {"1": [...]} 对象，不是数组。旧代码原样传给
+    // filterServerReliableGroups，.filter 在对象上抛
+    // TypeError: undefined is not a function，首页永远加载失败。
+    // 这里 mock 直接给字典（绕过 api.ts 的归一化），验证 store 层的
+    // 防御：非数组直接当空组，列表照常出来。
+    const dictResponse = {
+      ...MOVIE,
+      filters: {
+        "1": [{ key: "area", name: "地区", value: [{ n: "全部", v: "" }] }],
+      },
+    };
+    getAggMock.mockResolvedValue(dictResponse);
+    selectMovie();
+    await waitFor(
+      () =>
+        JSON.stringify(useHomeStore.getState().contentData.map((i: any) => i.title)) ===
+        JSON.stringify(["电影影片A", "电影影片B"]),
+    );
+
+    expect(useHomeStore.getState().error).toBeNull();
+    expect(useHomeStore.getState().errorDetail).toBeNull();
+    expect(useHomeStore.getState().aggFilterGroups).toEqual([]);
+  });
 });

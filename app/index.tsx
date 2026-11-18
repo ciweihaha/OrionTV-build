@@ -520,7 +520,10 @@ export default function HomeScreen() {
               （AGG_INVALID_RESPONSE / JSON 解析失败 / 超时 / 网络异常），
               原始值单独一行显示，方便定位；与友好文案相同时不重复显示。
               重试走 store 的 retryLoad 硬重载（绕过缓存命中与同内容
-              后台刷新），点按一定重新发起请求。 */}
+              后台刷新），点按一定重新发起请求。
+              注意：不要给这个按钮加 hasTVPreferredFocus——v1.7.7 真机实测，
+              带它的重试按钮在平板上触摸/确认键/Enter 全都点不动（零流量），
+              而同屏不带它的分类按钮都能点；电视上遥控仍可移焦到它上面按确认。 */}
           {errorDetail && errorDetail !== error ? (
             <ThemedText style={{ padding: spacing, textAlign: "center" }}>
               {errorDetail}
@@ -530,7 +533,6 @@ export default function HomeScreen() {
             text="重试"
             variant="primary"
             onPress={() => retryLoad()}
-            hasTVPreferredFocus
           />
         </View>
       ) : (
