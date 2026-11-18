@@ -25,13 +25,20 @@ import { Logger } from '@/utils/Logger';
 const logger = Logger.withTag('PlayScreen');
 
 // 优化的加载动画组件
-const LoadingContainer = memo(
+// 日志只在挂载时打一次：原来在 render 里调 logger.info，等待 URL 期间
+// 每次重渲染（父组件状态变就触发）都重复打一条，纯噪音；render 里也
+// 不应有副作用。
+export const LoadingContainer = memo(
   ({ style, currentEpisode }: { style: any; currentEpisode: { url: string; title: string } | undefined }) => {
-    logger.info(
-      `[PERF] Video component NOT rendered - waiting for valid URL. currentEpisode: ${!!currentEpisode}, url: ${
-        currentEpisode?.url ? "exists" : "missing"
-      }`
-    );
+    useEffect(() => {
+      logger.info(
+        `[PERF] Video component NOT rendered - waiting for valid URL. currentEpisode: ${!!currentEpisode}, url: ${
+          currentEpisode?.url ? "exists" : "missing"
+        }`
+      );
+      // 只在挂载时记一次（currentEpisode 变化会换组件实例，不依赖它）。
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     return (
       <View style={style}>
         <VideoLoadingAnimation showProgressBar />
