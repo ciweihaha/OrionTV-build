@@ -181,6 +181,13 @@ interface HomeState {
   aggPage: number;
   hasMore: boolean;
   error: string | null;
+  // 原始错误值（如 AGG_INVALID_RESPONSE / Network request failed /
+  // RESPONSE_TIMEOUT: ... / BODY_TIMEOUT_BREAKER_OPEN: agg ...）：
+  // error 是给用户看的友好文案，原始值只用来定位问题，错误屏上
+  // 单独一行显示。v1.7.6 只显示友好文案，agg 到底是哪一环失败
+  // （响应结构错 / JSON 坏 / 超时 / 网络异常）从界面上看不出来，
+  // 平板重测两轮都卡在这里。
+  errorDetail: string | null;
   // CMS 筛选（agg 下发的 4 组：地区/年代/语言/排序）："" = 全部；
   // 只在 CMS 分类下生效。
   aggFilters: AggFilters;
@@ -197,6 +204,13 @@ interface HomeState {
   // 否则电视上焦点会被抢走，重载完焦点又被 hasTVPreferredFocus 拉回“全部”，
   // 用户再按 OK 会点到“全部”把刚选的筛选撤掉，看起来像“筛了没用”。
   fetchInitialData: (options?: { keepFilterRow?: boolean }) => Promise<void>;
+  // 错误屏“重试”的唯一入口：硬重载，不走 fetchInitialData 的缓存命中
+  // 与同内容后台刷新两条提前返回。错误屏上重试时列表一定是空的，
+  // 任何提前返回都等于“点了没反应”——v1.7.6 平板重测第 2 轮
+  // （2026-11-18 13:24–13:29）点重试两次、12 秒内零流量，
+  // 原因未在代码层定位；本方法把重试做成确定性的：清掉在途请求、
+  // 复位分页、一定走到 loadMoreData 发新请求。
+  retryLoad: () => Promise<void>;
   loadMoreData: () => Promise<void>;
   selectCategory: (category: Category) => void;
   // 切筛选：值没变或不在 CMS 分类下不做事；否则记下新值并重拉首屏。
@@ -233,10 +247,43 @@ const useHomeStore = create<HomeState>((set, get) => ({
   aggPage: 0,
   hasMore: true,
   error: null,
+  errorDetail: null,
   aggFilters: { ...EMPTY_AGG_FILTERS },
   aggFilterGroups: [],
   filtersVisible: false,
   cmsFilterAvailable: false,
+
+  // 错误屏“重试”的硬重载：不经过 fetchInitialData。fetchInitialData
+  // 有两条提前返回（缓存命中、同内容后台刷新），错误屏上重试时
+  // 列表是空的，正常走不到那两条——但 v1.7.6 平板重测第 2 轮点重试
+  // 两次、12 秒内零流量，说明重试链路上存在未定位的提前返回或
+  // 取消；重试必须做成确定性的，这里直接清错、复位、中止在途
+  // 请求、发新请求，不给任何提前返回留口子。
+  retryLoad: async () => {
+    // 先中止在途请求：旧请求的 finally 按控制器身份守卫，activeLoadController
+    // 已被下面置空，旧请求什么都不清，不会干扰新加载的标记与 loading。
+    activeLoadController?.abort();
+    activeLoadController = null;
+    activeLoadCategory = null;
+    activeLoadFiltersKey = "";
+    // 屏上旧数据作废：不设这个，loadMoreData 首屏分支的后台刷新守卫
+    // 会把失败当成“旧列表还在”而不写 error。
+    lastDisplayedKey = null;
+    const { selectedCategory } = get();
+    set({
+      loading: true,
+      loadingMore: false,
+      contentData: [],
+      pageStart: 0,
+      aggPage: 0,
+      hasMore: true,
+      error: null,
+      errorDetail: null,
+      cmsFilterAvailable: false,
+      aggFilterGroups: [],
+    });
+    await get().loadMoreData();
+  },
 
   fetchInitialData: async (options?: { keepFilterRow?: boolean }) => {
     const { apiBaseUrl } = useSettingsStore.getState();
@@ -254,7 +301,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
     // 最近播放不缓存，始终实时获取
     if (selectedCategory.type === 'record') {
-      set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null, cmsFilterAvailable: false });
+      set({ loading: true, contentData: [], pageStart: 0, aggPage: 0, hasMore: true, error: null, errorDetail: null, cmsFilterAvailable: false });
       await get().loadMoreData();
       return;
     }
@@ -273,6 +320,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
         aggPage: selectedCategory.cmsType ? (cachedData.aggPage ?? 1) : 0,
         hasMore: cachedData.hasMore,
         error: null,
+        errorDetail: null,
         // CMS 缓存只由 CMS 成功分支写入，命中即说明数据来自 CMS。
         cmsFilterAvailable: !!selectedCategory.cmsType,
         // 筛选选项组随缓存一并恢复（只保留服务端可靠的 4 组），
@@ -290,7 +338,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
     // 切分类/切筛选时键已变，走下面正常清空加载。缓存命中已在上面提前返回，
     // 走到这里是缓存过期/未命中，仍要拉新数据，但不能闪白回顶。
     if (lastDisplayedKey === cacheKey && get().contentData.length > 0) {
-      set({ pageStart: 0, aggPage: 0, hasMore: true, error: null });
+      set({ pageStart: 0, aggPage: 0, hasMore: true, error: null, errorDetail: null });
       isBackgroundRefresh = true;
       try {
         await get().loadMoreData();
@@ -309,6 +357,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       aggPage: 0,
       hasMore: true,
       error: null,
+      errorDetail: null,
       cmsFilterAvailable: options?.keepFilterRow ? get().cmsFilterAvailable : false,
       aggFilterGroups: options?.keepFilterRow ? get().aggFilterGroups : [],
     });
@@ -408,6 +457,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             aggPage: 0,
             hasMore: doubanResult.list.length !== 0,
             error: null,
+            errorDetail: null,
             // 回落数据是豆瓣项，无地区/年代字段，筛选行隐藏。
             cmsFilterAvailable: false,
             aggFilterGroups: [],
@@ -463,6 +513,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               aggPage: 1,
               hasMore: false,
               error: null,
+              errorDetail: null,
               cmsFilterAvailable: true,
               // 空列表也保留服务端下发的筛选组（本页无结果不代表选项失效），
               // 面板不消失，用户可直接改筛选。
@@ -478,6 +529,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               aggPage: 1,
               hasMore: false,
               error: null,
+              errorDetail: null,
               cmsFilterAvailable: false,
               aggFilterGroups: [],
             });
@@ -531,6 +583,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             cmsFilterAvailable: true,
             aggFilterGroups: filterGroups,
             error: null,
+            errorDetail: null,
           });
           lastDisplayedKey = cacheKey;
         } else {
@@ -578,6 +631,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               cmsFilterAvailable: true,
               aggFilterGroups: filterGroups,
               error: null,
+              errorDetail: null,
             };
           });
         }
@@ -634,6 +688,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
             pageStart: newItems.length,
             hasMore: result.list.length !== 0,
             error: null,
+            errorDetail: null,
           });
           lastDisplayedKey = cacheKey;
         } else {
@@ -674,6 +729,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               pageStart: state.pageStart + deduped.length,
               hasMore: result.list.length !== 0,
               error: null,
+              errorDetail: null,
             };
           });
         }
@@ -699,6 +755,15 @@ const useHomeStore = create<HomeState>((set, get) => ({
       // 归一化：抛出的不一定是 Error（如字符串），直接读 err.message.includes
       // 会在 catch 块内再抛 TypeError；非 Error 一律按空消息处理，走默认文案
       const msg = err instanceof Error ? err.message : "";
+      // 原始错误值单独存一份（带 name，如 "AbortError: ..." /
+      // "BODY_TIMEOUT_BREAKER_OPEN: agg ..."）：error 是友好文案，
+      // 原始值才是定位依据，错误屏上单独一行显示（v1.7.7）。
+      const rawDetail =
+        err instanceof Error
+          ? err.name && err.name !== "Error"
+            ? `${err.name}: ${err.message}`
+            : err.message
+          : String(err ?? "");
       let errorMessage = "加载失败，请重试";
 
       if (msg === "API_URL_NOT_SET") {
@@ -726,7 +791,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
       if (isBackgroundRefresh && get().contentData.length > 0) {
         logger.warn("loadMoreData: background refresh failed, keeping displayed list", err);
       } else {
-        set({ error: errorMessage });
+        set({ error: errorMessage, errorDetail: rawDetail || errorMessage });
       }
     } finally {
       // 只清属于本次加载的标记与 loading：用控制器身份判断，不用分类/筛选
@@ -760,6 +825,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
         aggPage: 0,
         hasMore: true,
         error: null,
+        errorDetail: null,
         // 旧分类的 loadMore 还在飞时切分类，旧请求 finally 因 isStale 跳过
         // 清理；缓存命中路径不发新请求，无人再清 loadingMore，底部转圈
         // 会永久显示——切分类时直接复位。
@@ -912,7 +978,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
   },
 
   clearError: () => {
-    set({ error: null });
+    set({ error: null, errorDetail: null });
   },
 }));
 

@@ -38,7 +38,9 @@ export default function HomeScreen() {
     loading,
     loadingMore,
     error,
+    errorDetail,
     fetchInitialData,
+    retryLoad,
     loadMoreData,
     selectCategory,
     refreshPlayRecords,
@@ -514,10 +516,20 @@ export default function HomeScreen() {
           <ThemedText type="subtitle" style={{ padding: spacing }}>
             {error}
           </ThemedText>
+          {/* 原始错误值（v1.7.7）：友好文案看不出是哪一环失败
+              （AGG_INVALID_RESPONSE / JSON 解析失败 / 超时 / 网络异常），
+              原始值单独一行显示，方便定位；与友好文案相同时不重复显示。
+              重试走 store 的 retryLoad 硬重载（绕过缓存命中与同内容
+              后台刷新），点按一定重新发起请求。 */}
+          {errorDetail && errorDetail !== error ? (
+            <ThemedText style={{ padding: spacing, textAlign: "center" }}>
+              {errorDetail}
+            </ThemedText>
+          ) : null}
           <StyledButton
             text="重试"
             variant="primary"
-            onPress={() => fetchInitialData()}
+            onPress={() => retryLoad()}
             hasTVPreferredFocus
           />
         </View>
