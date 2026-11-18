@@ -47,7 +47,7 @@
       "typedRoutes": true
     },
     "name": "OrionTV",
-    "version": "1.7.10",
+    "version": "1.7.11",
     "slug": "OrionTV",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
@@ -57,7 +57,7 @@
     ],
     "android": {
       "package": "com.oriontv",
-      "versionCode": 10710,
+      "versionCode": 10711,
       "usesCleartextTraffic": true,
       "hardwareAcceleration": true,
       "icon": "./assets/images/icon.png",
