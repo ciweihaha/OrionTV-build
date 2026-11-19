@@ -114,19 +114,24 @@ class TCPHttpServer {
     return httpResponse;
   }
 
-  /** socket.write 失败（对端已断开等）绝不能抛回 data 回调，否则闪退 */
-  private safeWrite(socket: TcpSocket.Socket, text: string): void {
+  /**
+   * 响应写回 + 半关闭必须一次完成（v1.7.12 修“手机发完没反应”）：
+   * 原先 safeWrite(response) 后立刻 safeEnd()，而 react-native-tcp-socket
+   * 的 write 是异步桥接（cb 在 native 回 'written' 时才触发），无参 end()
+   * 则立即发 FIN——FIN 常抢在写回之前，客户端只看到连接关闭、收不到任何
+   * HTTP 响应（curl 000 / fetch 挂起），手机还以为没配对成功。
+   * 服务端 handler 本身已跑完（消息确实落进输入框），丢的只是响应。
+   * 现在把响应体直接交给 end(data)：库内部先 write、等 'written' 回调
+   * 再发 FIN（见 node_modules/react-native-tcp-socket/src/Socket.js
+   * end()），写回与关闭的顺序由库保证。无响应体时仍用无参 end()。
+   */
+  private safeEnd(socket: TcpSocket.Socket, data?: string): void {
     try {
-      socket.write(text);
-    } catch (error) {
-      logger.error('[TCPHttpServer] Failed to write response:', error);
-    }
-  }
-
-  /** socket.end 同上，失败只记日志 */
-  private safeEnd(socket: TcpSocket.Socket): void {
-    try {
-      socket.end();
+      if (data !== undefined) {
+        socket.end(data);
+      } else {
+        socket.end();
+      }
     } catch (error) {
       logger.error('[TCPHttpServer] Failed to end socket:', error);
     }
@@ -232,13 +237,12 @@ class TCPHttpServer {
                 const transferEncodingMatch = headerSection.match(/transfer-encoding:\s*([^\r\n]*)/i);
                 if (transferEncodingMatch && transferEncodingMatch[1].toLowerCase().includes('chunked')) {
                   logger.error('[TCPHttpServer] Chunked transfer encoding not supported, returning 501');
-                  this.safeWrite(socket, this.formatHttpResponse({
+                  this.safeEnd(socket, this.formatHttpResponse({
                     statusCode: 501,
                     headers: { 'Content-Type': 'text/plain' },
                     body: 'Not Implemented: chunked transfer encoding is not supported'
                   }));
                   clearIdleTimer();
-                  this.safeEnd(socket);
                   requestData = '';
                   requestByteLength = 0;
                   return;
@@ -258,10 +262,11 @@ class TCPHttpServer {
                   const request = this.parseHttpRequest(requestData, remoteAddress);
                   if (request && this.requestHandler) {
                     const response = await this.requestHandler(request);
-                    this.safeWrite(socket, this.formatHttpResponse(response));
+                    // 响应体走 end(data)：先写回、再 FIN，见 safeEnd 注释
+                    this.safeEnd(socket, this.formatHttpResponse(response));
                   } else {
                     // Send 400 Bad Request for malformed requests
-                    this.safeWrite(socket, this.formatHttpResponse({
+                    this.safeEnd(socket, this.formatHttpResponse({
                       statusCode: 400,
                       headers: { 'Content-Type': 'text/plain' },
                       body: 'Bad Request'
@@ -271,14 +276,13 @@ class TCPHttpServer {
                   logger.error('[TCPHttpServer] Error handling request:', error);
                   // 500 路径再包一层：formatHttpResponse 自身已不再抛错，
                   // 但二次失败也绝不能逃出回调
-                  this.safeWrite(socket, this.formatHttpResponse({
+                  this.safeEnd(socket, this.formatHttpResponse({
                     statusCode: 500,
                     headers: { 'Content-Type': 'text/plain' },
                     body: 'Internal Server Error'
                   }));
                 }
 
-                this.safeEnd(socket);
                 clearIdleTimer();
                 requestData = '';
                 requestByteLength = 0;
@@ -328,6 +332,21 @@ class TCPHttpServer {
         reject(error);
       }
     });
+    // 结算后复位 startingPromise（v1.7.12）：listen 回调若同步触发
+    // （单测 mock 的 listen 是同步调 cb），回调里的置 null 会被上面
+    // 的赋值覆盖回来——stop() 随后看到一个已结算的非空 promise，
+    // 走“启动中、完成后重停”分支无限自调度，微任务死循环饿死事件循环
+    // （jest 表现为测试跑完也不退出、连超时都不触发）。
+    // 真机上 listen 回调是异步的，不会触发，但这里按结算复位一次，
+    // 同步/异步两种情况都正确；启动进行中时仍非 null，去重不受影响。
+    this.startingPromise.then(
+      () => {
+        this.startingPromise = null;
+      },
+      () => {
+        this.startingPromise = null;
+      },
+    );
     return this.startingPromise;
   }
 

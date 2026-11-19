@@ -3996,7 +3996,7 @@ expo-crypto@~58.0.8:
   resolved "https://registry.yarnpkg.com/expo-crypto/-/expo-crypto-58.0.8.tgz#2545c08169cc60d954ad83c7d659a624666e818a"
   integrity sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==
 
-expo-file-system@~58.0.13:
+expo-file-system@~58.0.14:
   version "58.0.14"
   resolved "https://registry.npmjs.org/expo-file-system/-/expo-file-system-58.0.14.tgz#87cd00ee9300531b2537b90debd124b8e781562b"
   integrity sha512-VK67RQPDmWRHGbvpmPY5MeA1Ulw1LiyKs4KIN8na/q7SlkxYuPPR8biWsyX1S1/8XAHm6y2txUnYjCKh9l93lQ==
@@ -4084,7 +4084,7 @@ expo-modules-macros@0.33.0:
     "@expo/modules-macros-win32-arm64" "0.33.0"
     "@expo/modules-macros-win32-x64" "0.33.0"
 
-expo-router@~58.0.31:
+expo-router@~58.0.32:
   version "58.0.32"
   resolved "https://registry.yarnpkg.com/expo-router/-/expo-router-58.0.32.tgz#b8f81f32e4f3e3bff1d92b61b7029351032cdd92"
   integrity sha512-UEfbsGvjGL8MJXj/NHt/elUupdJ5tUDvaHdSy0fEfIIeUnOqixr6KJZlyv9OrJyl4OYmWt8HuCHDyT5Pzqbfkw==
@@ -5210,7 +5210,7 @@ jest-environment-node@^29.7.0:
     jest-mock "^29.7.0"
     jest-util "^29.7.0"
 
-jest-expo@~58.0.14:
+jest-expo@~58.0.15:
   version "58.0.15"
   resolved "https://registry.npmjs.org/jest-expo/-/jest-expo-58.0.15.tgz#e636b24ef042bec25feb367c1b32f832df022740"
   integrity sha512-3m7JlS6Lmay8FfhTFGitmSjktO5uIgerxRidxv223MRauZnJjfxbKzK8A/ATot8Y+1Ac9qZY518+O7RQ2Xe58Q==
@@ -5846,10 +5846,10 @@ lru-cache@^5.1.1:
   dependencies:
     yallist "^3.0.2"
 
-lucide-react-native@^1.72.0:
-  version "1.75.0"
-  resolved "https://registry.yarnpkg.com/lucide-react-native/-/lucide-react-native-1.75.0.tgz#bb930749f8ca577c420ed9b66971c789deec8ceb"
-  integrity sha512-UEghpKIKwFbVybiNIW6VuwG/VQdMAB3TTfFfjummHoRwOmPw1XtvvoFi4kNXTFtPmVJCtM+WaZYPMXgusBIoAg==
+lucide-react-native@^1.76.0:
+  version "1.76.0"
+  resolved "https://registry.npmjs.org/lucide-react-native/-/lucide-react-native-1.76.0.tgz#d2c674d7447994244f6ed4d5dfde4df6ff2759d1"
+  integrity sha512-HgRz7fcN3v6M0OYCGaGLS9KNrrTLZ+TUwU8mZaLuarC0CaCxuZT0xJJpRgK6bVb21fA5dynmxP/G57algd3nUg==
 
 make-dir@^4.0.0:
   version "4.0.0"
