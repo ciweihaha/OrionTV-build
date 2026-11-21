@@ -45,6 +45,31 @@ const VERSION_CHECK_RETRY_BASE_DELAY_MS = 2_000;
 /** APK 下载重试退避基数（毫秒，实际延迟 = 基数 × 第几次重试） */
 const APK_DOWNLOAD_RETRY_BASE_DELAY_MS = 3_000;
 
+/**
+ * 预发布后缀的 semver 比较（第 23 轮）：旧实现整段字符串比较，
+ * "beta.10" < "beta.2"（"1" < "2"），beta.10 用户会被误判为低于
+ * beta.2、收不到之后的更新提示。按 semver 逐段比：纯数字段按数值比，
+ * 数字段 < 字母段，字母段按字典序，前缀相等时段数少的低。
+ */
+function comparePrerelease(a: string, b: string): number {
+  const aParts = a.split('.');
+  const bParts = b.split('.');
+  for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+    const aId = aParts[i];
+    const bId = bParts[i];
+    if (aId === undefined) return -1; // 段数少的低
+    if (bId === undefined) return 1;
+    if (aId === bId) continue;
+    const aNum = /^\d+$/.test(aId) ? Number(aId) : null;
+    const bNum = /^\d+$/.test(bId) ? Number(bId) : null;
+    if (aNum !== null && bNum !== null) return aNum < bNum ? -1 : 1;
+    if (aNum !== null) return -1; // 数字段 < 字母段
+    if (bNum !== null) return 1;
+    return aId < bId ? -1 : 1;
+  }
+  return 0;
+}
+
 class UpdateService {
   private static instance: UpdateService;
   static getInstance(): UpdateService {
@@ -593,7 +618,7 @@ class UpdateService {
   compareVersions(v1: string, v2: string): number {
     // 数字部分相等时，带预发布后缀（-beta/-alpha/-rc）的版本低于正式版：
     // 旧实现直接剥掉后缀，1.7.0-beta 与 1.7.0 被判相等，beta 用户永远收不到
-    // 正式版更新提示。两边都有后缀时按后缀字典序比较（beta.1 < beta.2）。
+    // 正式版更新提示。两边都有后缀时按 semver 逐段比较（见 comparePrerelease）。
     const parse = (v: string) => {
       const [num, pre] = v.split('-', 2);
       return {
@@ -615,7 +640,7 @@ class UpdateService {
     if (a.pre === b.pre) return 0;
     if (a.pre === '') return 1; // 正式版高于预发布版
     if (b.pre === '') return -1;
-    return a.pre < b.pre ? -1 : 1;
+    return comparePrerelease(a.pre, b.pre);
   }
   getCurrentVersion(): string {
     return currentVersion;

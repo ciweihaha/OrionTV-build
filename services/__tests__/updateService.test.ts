@@ -296,6 +296,18 @@ describe("UpdateService.compareVersions 预发布后缀（第 5 轮）", () => {
     expect(updateService.compareVersions("1.7.0-alpha", "1.7.0-beta")).toBe(-1);
   });
 
+  it("预发布后缀里的数字段按数值比（第 23 轮，semver）：beta.10 > beta.2", () => {
+    // 旧实现整段字符串比较，"beta.10" < "beta.2"（"1" < "2"），
+    // beta.10 用户会被误判为低于 beta.2，收不到 beta.10 之后的更新提示
+    expect(updateService.compareVersions("1.7.0-beta.10", "1.7.0-beta.2")).toBe(1);
+    expect(updateService.compareVersions("1.7.0-beta.2", "1.7.0-beta.10")).toBe(-1);
+    expect(updateService.compareVersions("1.7.0-beta.10", "1.7.0-beta.10")).toBe(0);
+    // 纯数字段 < 字母段（semver）：1.7.0-1 < 1.7.0-alpha
+    expect(updateService.compareVersions("1.7.0-1", "1.7.0-alpha")).toBe(-1);
+    // 前缀相等时段数少的低：beta < beta.1
+    expect(updateService.compareVersions("1.7.0-beta", "1.7.0-beta.1")).toBe(-1);
+  });
+
   it("无后缀比较不受影响（回归）", () => {
     expect(updateService.compareVersions("1.7.0", "1.6.8")).toBe(1);
     expect(updateService.compareVersions("1.7.0", "1.7.0")).toBe(0);
