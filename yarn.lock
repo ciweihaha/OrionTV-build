@@ -3996,9 +3996,9 @@ expo-crypto@~58.0.8:
   resolved "https://registry.yarnpkg.com/expo-crypto/-/expo-crypto-58.0.8.tgz#2545c08169cc60d954ad83c7d659a624666e818a"
   integrity sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==
 
-expo-file-system@~58.0.14:
+expo-file-system@~58.0.13, expo-file-system@~58.0.14:
   version "58.0.14"
-  resolved "https://registry.npmjs.org/expo-file-system/-/expo-file-system-58.0.14.tgz#87cd00ee9300531b2537b90debd124b8e781562b"
+  resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-58.0.14.tgz#87cd00ee9300531b2537b90debd124b8e781562b"
   integrity sha512-VK67RQPDmWRHGbvpmPY5MeA1Ulw1LiyKs4KIN8na/q7SlkxYuPPR8biWsyX1S1/8XAHm6y2txUnYjCKh9l93lQ==
 
 expo-font@~58.0.12:
@@ -5846,10 +5846,10 @@ lru-cache@^5.1.1:
   dependencies:
     yallist "^3.0.2"
 
-lucide-react-native@^1.76.0:
-  version "1.76.0"
-  resolved "https://registry.npmjs.org/lucide-react-native/-/lucide-react-native-1.76.0.tgz#d2c674d7447994244f6ed4d5dfde4df6ff2759d1"
-  integrity sha512-HgRz7fcN3v6M0OYCGaGLS9KNrrTLZ+TUwU8mZaLuarC0CaCxuZT0xJJpRgK6bVb21fA5dynmxP/G57algd3nUg==
+lucide-react-native@^1.77.0:
+  version "1.77.0"
+  resolved "https://registry.yarnpkg.com/lucide-react-native/-/lucide-react-native-1.77.0.tgz#30f2e24a963ce064f0ba24660d32891ca4ad7421"
+  integrity sha512-cJfeXbYfrvyuGxLm+lXTnR2VsqKKgTbkXuhvt7tFTwS4+1kdm1EORzQmeqbRb9oT6ZClrJq6ZT3Wxieqz4dy+w==
 
 make-dir@^4.0.0:
   version "4.0.0"
