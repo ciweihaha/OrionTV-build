@@ -1993,36 +1993,35 @@
   resolved "https://registry.npmjs.org/@react-native/normalize-colors/-/normalize-colors-0.74.89.tgz#b8ac17d1bbccd3ef9a1f921665d04d42cff85976"
   integrity sha512-qoMMXddVKVhZ8PA1AbUCk83trpd6N+1nF2A6k1i6LsQObyS92fELuk8kU/lQs6M7BsMHwqyLCpQJ1uFgNvIQXg==
 
-"@react-navigation/core@^7.24.0":
-  version "7.24.0"
-  resolved "https://registry.npmjs.org/@react-navigation/core/-/core-7.24.0.tgz#d6104ebcf8696f7858772c158822e553170a6d6f"
-  integrity sha512-PPMHGSgLB65eqWOBHeD/nGyzGJV3rcZ5sZbsCXlaC37HnLmwTEjB4CaOQn8CBVVv/Sc0Kl/W5dpPLls9Stk2WA==
+"@react-navigation/core@^7.25.0":
+  version "7.25.0"
+  resolved "https://registry.yarnpkg.com/@react-navigation/core/-/core-7.25.0.tgz#e3ceb38c446dd1e44a30aef13564f3bf305396b5"
+  integrity sha512-LL3ivnErFci5TDWOQzxmORo5++RXfVt0fmkaDCIUuB2MjlXBkCIbJ8olB/C9FC6wn2bZHvou772YGYf+XilCmw==
   dependencies:
-    "@react-navigation/routers" "^7.6.5"
+    "@react-navigation/routers" "^7.6.6"
     escape-string-regexp "^4.0.0"
     fast-deep-equal "^3.1.3"
-    react-is "^19.1.0"
+    react-is "^19.3.1"
     use-latest-callback "^0.2.4"
-    use-sync-external-store "^1.5.0"
 
-"@react-navigation/native@^7.5.1":
-  version "7.5.1"
-  resolved "https://registry.npmjs.org/@react-navigation/native/-/native-7.5.1.tgz#8af9e9c9b9e40379d27aed94a3be99139275a558"
-  integrity sha512-p9xOvhG8q8rq0FPAoh0JC22ALbyRZt7U2uH8XrHRDjvqOEFrumME7szM6LaWW2WctolAVeZAfOTV+pUKULI/kQ==
+"@react-navigation/native@^7.5.2":
+  version "7.5.2"
+  resolved "https://registry.yarnpkg.com/@react-navigation/native/-/native-7.5.2.tgz#779d5aac3b7fabce1a066871cb29fbfff68f16b0"
+  integrity sha512-eOFZTdETOhqhJdaJ2gHbQchYMkd4bRXCJ2J5Rm8WtNmZYc23/a1N/qOfdClHOpXh6kiLt/rbzY6odoTjQrBWcw==
   dependencies:
-    "@react-navigation/core" "^7.24.0"
+    "@react-navigation/core" "^7.25.0"
     escape-string-regexp "^4.0.0"
     fast-deep-equal "^3.1.3"
-    nanoid "^3.3.11"
-    standard-navigation "^0.0.8"
+    nanoid "^3.3.20"
+    standard-navigation "^0.0.9"
     use-latest-callback "^0.2.4"
 
-"@react-navigation/routers@^7.6.5":
-  version "7.6.5"
-  resolved "https://registry.npmjs.org/@react-navigation/routers/-/routers-7.6.5.tgz#c7c4dde9e42d7a10540b5bf675e0a01ae0005051"
-  integrity sha512-hpvpVFt6wu3U014F/0Qy45VZCErlUvIV8kN1L6HovN5P9OpbXAzFTaRQmG7VW6czg2tSkUL5S3dZA0HIu5QirQ==
+"@react-navigation/routers@^7.6.6":
+  version "7.6.6"
+  resolved "https://registry.yarnpkg.com/@react-navigation/routers/-/routers-7.6.6.tgz#1a6fc29e2a6318712b1bd7879022ee96dc07ee98"
+  integrity sha512-h7YSfGDkgsJgivbxUeYS5nw2SXiPT2Y951k3lEnSKUEViaR6xbSOEl3WqPiJPagQCzt89dAM8T/N/NR/t+1uMg==
   dependencies:
-    nanoid "^3.3.11"
+    nanoid "^3.3.20"
 
 "@rtsao/scc@^1.1.0":
   version "1.1.0"
@@ -3996,9 +3995,9 @@ expo-crypto@~58.0.8:
   resolved "https://registry.yarnpkg.com/expo-crypto/-/expo-crypto-58.0.8.tgz#2545c08169cc60d954ad83c7d659a624666e818a"
   integrity sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==
 
-expo-file-system@~58.0.14:
+expo-file-system@~58.0.13, expo-file-system@~58.0.14:
   version "58.0.14"
-  resolved "https://registry.npmjs.org/expo-file-system/-/expo-file-system-58.0.14.tgz#87cd00ee9300531b2537b90debd124b8e781562b"
+  resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-58.0.14.tgz#87cd00ee9300531b2537b90debd124b8e781562b"
   integrity sha512-VK67RQPDmWRHGbvpmPY5MeA1Ulw1LiyKs4KIN8na/q7SlkxYuPPR8biWsyX1S1/8XAHm6y2txUnYjCKh9l93lQ==
 
 expo-font@~58.0.12:
@@ -6171,7 +6170,7 @@ multitars@^1.0.2:
   resolved "https://registry.npmjs.org/multitars/-/multitars-1.0.2.tgz#340f48eebdfe94cc4e7cf287dfcdeedb9f779003"
   integrity sha512-6GwVw5eLi9sThdtlS4PKwC7yRLaf45pYhIEzKBHdKxi+YOXGKFX8acIniH+Uh/+k9mS2lQOupTccjoe5r0/1IQ==
 
-nanoid@^3.3.11, nanoid@^3.3.18, nanoid@^3.3.20:
+nanoid@^3.3.18, nanoid@^3.3.20:
   version "3.3.20"
   resolved "https://registry.npmjs.org/nanoid/-/nanoid-3.3.20.tgz#dfd4444d85aa10111ef66ba85ed72e08ba0855d8"
   integrity sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==
@@ -7382,10 +7381,10 @@ standard-navigation@^0.0.5:
   resolved "https://registry.npmjs.org/standard-navigation/-/standard-navigation-0.0.5.tgz#8ce5fef5a251991f58ed69283bee5cc1d242625e"
   integrity sha512-YAmzwAiiQVocZxO/VGPFiQHcu5pKiz09QIGC0MK6aRMoa3E0QkoTQgcqJr7ZZ3OMiNhu4DkaGElFI5htjOIDbw==
 
-standard-navigation@^0.0.8:
-  version "0.0.8"
-  resolved "https://registry.npmjs.org/standard-navigation/-/standard-navigation-0.0.8.tgz#aef79bef130ec8ba0a9c070d3a728d96d68df8a8"
-  integrity sha512-TyVbo7INUDWtsUWDFn8RR7kwR87U0S4xHfLfbbnyeC581TmmyqQ+eM+nPw8rQTSD8QitRVcYfPaSHr/QJiUy1g==
+standard-navigation@^0.0.9:
+  version "0.0.9"
+  resolved "https://registry.yarnpkg.com/standard-navigation/-/standard-navigation-0.0.9.tgz#acdfb0a9c1623fa7298dfa5f49b176ec18917d4e"
+  integrity sha512-wPyhORF3kazxGp2lOOBrx5fFPzUNp3psBrKzkSrJRhs8/bk6gjjVrHq5mjz+4FBA9CfFl2zoxiirgEhqv4NOsw==
 
 statuses@~1.5.0:
   version "1.5.0"
@@ -7913,11 +7912,6 @@ use-latest-callback@^0.2.4:
   version "0.2.6"
   resolved "https://registry.npmjs.org/use-latest-callback/-/use-latest-callback-0.2.6.tgz#e5ea752808c86219acc179ace0ae3c1203255e77"
   integrity sha512-FvRG9i1HSo0wagmX63Vrm8SnlUU3LMM3WyZkQ76RnslpBrX694AdG4A0zQBx2B3ZifFA0yv/BaEHGBnEax5rZg==
-
-use-sync-external-store@^1.5.0:
-  version "1.7.0"
-  resolved "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.7.0.tgz#6dcb66ef569e02f186af6b3d575f414ce746e18f"
-  integrity sha512-6L+EeigHMQhdaIPNIFUKwfWJSwWFQ8gJbJ2DLOs5sDIegTwR9fRxvnM3uciHKjIZhFz+KAv2emhWMRvDmMcY8A==
 
 utils-merge@1.0.1:
   version "1.0.1"
